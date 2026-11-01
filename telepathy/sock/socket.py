@@ -28,8 +28,9 @@ import torch
 from ..config import INTENT_ANCHOR_VERIFY, INTENT_SHARE_VALUE
 from ..crypto.kx import KeyExchange, confirm_ok, confirm_tag, wrap_for
 from ..crypto.aead import AuthError, PacketAEAD, sender_direction
-from ..models.quant import decode_slot, encode_slot
-from ..tlp.header import RESOLVER_EP, Flag, MsgType, Packet, PacketError
+from ..crypto.aead import TAG_LEN
+from ..models.quant import decode_slot, encode_slot, slot_payload_len
+from ..tlp.header import EXT, HDR, MAX_PACKET, RESOLVER_EP, Flag, MsgType, Packet, PacketError
 from ..tlp.messages import ack_parse, ack_payload, b64, emb_encode, jdump, jload
 from ..tlp.session import Auditor, Capabilities, Session, TLPOptions
 from ..tlp.state import State, StateMachine
@@ -109,6 +110,7 @@ class _Out:
     timer: list | None = None
     done: threading.Event = field(default_factory=threading.Event)
     max_retx: int = 3
+    pkt_of: list = field(default_factory=list)    # slot index -> index into packets (batching)
 
 
 @dataclass
@@ -178,13 +180,13 @@ class Connection:
 
     # ------------------------------------------------------------------- send
     def _send(self, msg_type, payload=b"", flags=0, intent=0, msg_id=0, slot_index=0, slot_count=0,
-              prio=0, slot_dim=0, dst: tuple[str, int] | None = None, quiet=False):
+              prio=0, slot_dim=0, dst: tuple[str, int] | None = None, quiet=False, slot_batch=0):
         s = self.session
         ip, ep = dst or s.peer
         if s.routed:
             flags |= Flag.ROUTED
         pkt = Packet(msg_type, s.local[1], ep, s.session_id, next(self.seq), flags, intent, msg_id,
-                     slot_index, slot_count, prio, slot_dim, payload)
+                     slot_index, slot_count, prio, slot_dim, payload, slot_batch=slot_batch)
         if flags & Flag.KEYED:  # per-packet AEAD; seq and flags are final here
             pkt.payload = s.aead.seal(pkt, sender_direction(s.role))
         if self.trace_ext is not None:
@@ -192,6 +194,10 @@ class Connection:
         data = pkt.encode()
         s.stats.packets_sent += 1
         s.stats.bytes_sent += len(data)
+        if flags & Flag.KEYED:
+            s.stats.keyed_packets += 1
+        if msg_type == M.DATA:
+            s.stats.data_packets += 1
         if not self.fsm.established:
             s.stats.handshake_bytes += len(data)
             if self.fsm.state == State.NEGOTIATING:
@@ -204,19 +210,27 @@ class Connection:
         return pkt
 
     def send_slots(self, msg_type, slots: np.ndarray, protected: int, intent: int, bits: int,
-                   keyed: bool, msg_id: int | None = None, max_retx: int | None = None, quiet=False) -> int:
-        """Send one latent message: one slot per packet, in priority order (index order)."""
+                   keyed: bool, msg_id: int | None = None, max_retx: int | None = None, quiet=False,
+                   batch: int = 1) -> int:
+        """Send one latent message in priority order (index order). With batch = M > 1 (DATA only),
+        a packet carries up to M consecutive slots under one AEAD tag. The protected prefix and the
+        best-effort rest are packed separately, so a packet is either protected or best-effort and
+        loss handling treats its slots as a unit. batch = 1 gives one slot per packet (Telepathy-0)."""
         n, d = slots.shape
         mid = next(self.msg_ids) & 0xFFFF if msg_id is None else msg_id
         P = max(0, min(protected, n))
         keyed = keyed and self.session.aead is not None
-        pkts = []
-        for i in range(n):
-            x = slots[i]
-            flags = (Flag.PROTECTED if i < P else 0) | (Flag.LAST_SLOT if i == n - 1 else 0) | (Flag.KEYED if keyed else 0)
-            pkts.append(dict(msg_type=msg_type, payload=encode_slot(x, bits), flags=flags, intent=intent,
-                             msg_id=mid, slot_index=i, slot_count=n, prio=i, slot_dim=d))
-        o = _Out(msg_type, mid, n, P, pkts, max_retx=self.opts.max_retx if max_retx is None else max_retx)
+        Mb = max_batch(d, bits, batch, keyed) if msg_type == M.DATA else 1
+        groups = [(a, min(a + Mb, hi)) for lo, hi in ((0, P), (P, n)) for a in range(lo, hi, Mb)]
+        pkts, pkt_of = [], []
+        for a, b in groups:
+            flags = (Flag.PROTECTED if a < P else 0) | (Flag.LAST_SLOT if b == n else 0) | (Flag.KEYED if keyed else 0)
+            payload = b"".join(encode_slot(slots[i], bits) for i in range(a, b))
+            pkts.append(dict(msg_type=msg_type, payload=payload, flags=flags, intent=intent, msg_id=mid,
+                             slot_index=a, slot_count=n, prio=a, slot_dim=d, slot_batch=(b - a) if Mb > 1 else 0))
+            pkt_of += [len(pkts) - 1] * (b - a)
+        o = _Out(msg_type, mid, n, P, pkts, max_retx=self.opts.max_retx if max_retx is None else max_retx,
+                 pkt_of=pkt_of)
         with self.lock:
             self.out[(int(msg_type), mid)] = o
         for p in pkts:
@@ -228,8 +242,10 @@ class Connection:
         return mid
 
     def _retransmit(self, o: _Out, missing):
-        for i in missing:
-            p = dict(o.packets[i])
+        """Retransmit the packets that hold the missing slots (one packet per slot without batching)."""
+        for k in sorted({o.pkt_of[i] for i in missing} if o.pkt_of else set(missing)):
+            p = dict(o.packets[k])
+            i = p["slot_index"]
             p["flags"] = p["flags"] | Flag.ACK_REQ
             o.retransmits += 1
             self.session.stats.retransmits += 1
@@ -317,28 +333,31 @@ class Connection:
             if new:
                 m = _In(int(pkt.msg_type), pkt.msg_id, pkt.slot_count, pkt.intent, first_at=time.monotonic())
                 self.inc[key] = m
-            i = pkt.slot_index
             m.bytes += pkt.wire_len()
-            if i in m.vecs or m.final:
-                m.duplicates += 1
-            elif is_data and pkt.slot_dim == 0:   # opaque byte message (send_bytes)
-                m.vecs[i] = bytes(plain)
-                m.order.append(i)
-                if pkt.flags & Flag.PROTECTED:
-                    m.prot_max = max(m.prot_max, i)
-                else:
-                    m.be_min = min(m.be_min, i)
+            if is_data and pkt.slot_dim == 0:     # opaque byte message (send_bytes)
+                k, per = 1, len(plain)
             else:
+                k = pkt.n_slots if is_data else 1
                 bits = s.bits if is_data else 16
-                x = decode_slot(plain, pkt.slot_dim, bits)
-                if is_data and s.translator is not None:
-                    x = s.translator.apply_slot(i, x)
-                m.vecs[i] = x
-                m.order.append(i)
-                if pkt.flags & Flag.PROTECTED:
-                    m.prot_max = max(m.prot_max, i)
+                per = slot_payload_len(pkt.slot_dim, bits)
+            per_slot = is_data and s.translator is not None and not getattr(s.translator, "message_level", False)
+            for j in range(k):              # a batched DATA packet carries consecutive slots
+                i = pkt.slot_index + j
+                if i in m.vecs or m.final:
+                    m.duplicates += 1
+                    continue
+                if is_data and pkt.slot_dim == 0:
+                    m.vecs[i] = bytes(plain)
                 else:
-                    m.be_min = min(m.be_min, i)
+                    x = decode_slot(plain[j * per: (j + 1) * per], pkt.slot_dim, bits)
+                    if per_slot:
+                        x = s.translator.apply_slot(i, x)
+                    m.vecs[i] = x
+                m.order.append(i)
+            if pkt.flags & Flag.PROTECTED:
+                m.prot_max = max(m.prot_max, pkt.slot_index + k - 1)
+            else:
+                m.be_min = min(m.be_min, pkt.slot_index)
             if pkt.flags & Flag.LAST_SLOT:
                 m.last_seen = True
         if is_data:
@@ -441,6 +460,8 @@ class Connection:
             raise ConnectionReset(f"not established ({self.fsm.state.value})")
         x = slots.detach().cpu().numpy() if torch.is_tensor(slots) else np.asarray(slots)
         x = x[: self.session.N, : self.session.d].astype(np.float32)
+        if self.session.hub:   # hub mode: send in the anchor set's coordinates (SPEC.md 14.2)
+            x = np.asarray(self.caps.codec.to_hub(x[None]), np.float32)[0]
         n = x.shape[0]
         rel = self.opts.reliability
         if rel == "udp":
@@ -449,7 +470,8 @@ class Connection:
             P, retx = n, self.opts.tcp_max_retx
         else:
             P, retx = (n // 2 if protected is None else protected), None
-        return self.send_slots(M.DATA, x, P, intent, self.session.bits, keyed=True, max_retx=retx)
+        return self.send_slots(M.DATA, x, P, intent, self.session.bits, keyed=True, max_retx=retx,
+                               batch=self.session.batch)
 
     def send_bytes(self, payload: bytes, intent: int = INTENT_SHARE_VALUE) -> int:
         """Send one opaque byte message (a baseline such as compressed text) as a single keyed DATA
@@ -541,6 +563,18 @@ class Connection:
             while k in pres:
                 k += 1
             pres = set(range(k))
+        tr = self.session.translator
+        if tr is not None and getattr(tr, "message_level", False):
+            # a translator that needs the whole message (hub mode, relative coordinates): the slots
+            # were stored as received; translate the present ones together, missing slots as zeros
+            raw = np.zeros((N, self.session.wire_d or d), np.float32)
+            for i in pres:
+                if i < N:
+                    raw[i] = vecs[i]
+                    mask[i] = True
+            out = np.asarray(tr.apply_masked(raw, mask.numpy()), np.float32)
+            slots[mask] = torch.from_numpy(out[: N, : d])[mask]
+            return slots, mask
         for i in pres:
             if i < N:
                 slots[i] = torch.from_numpy(vecs[i])
@@ -564,9 +598,11 @@ class Connection:
         self.sock._drop_conn(self)
 
     # -------------------------------------------------------------- handshake
-    def _expect(self, types, timeout: float) -> Packet:
+    def _expect(self, types, timeout: float, pred=None) -> Packet:
+        def ok(p):
+            return p.msg_type in types and (pred is None or pred(p))
         for k, p in enumerate(self.stash):
-            if p.msg_type in types:
+            if ok(p):
                 return self.stash.pop(k)
         end = time.monotonic() + timeout
         while True:
@@ -579,7 +615,7 @@ class Connection:
                 continue
             if p.msg_type == M.RESET:
                 raise HandshakeError(f"peer RESET: {self.reset_reason}")
-            if p.msg_type in types:
+            if ok(p):
                 return p
             self.stash.append(p)
 
@@ -661,7 +697,7 @@ class Connection:
         self.fsm.to(State.HELLO_SENT)
         self.hello = self._caps_payload({"nonce": os.urandom(8).hex(), "heldout": o.n_heldout,
                                          "fit": o.n_fit if (negotiate and o.negotiate) else 0,
-                                         "translator": o.translator})
+                                         "translator": o.translator, **self._trec_flag()})
         self._send(M.HELLO, self.hello)
         p = self._expect({M.HELLO_ACK}, o.handshake_timeout)
         self.hello_ack = p.payload
@@ -676,9 +712,15 @@ class Connection:
         h = jload(p.payload)
         fit = h.get("fit", 0) if self.opts.negotiate else 0
         self.hello_ack = self._caps_payload({"nonce": os.urandom(8).hex(), "heldout": h.get("heldout", 32),
-                                             "fit": fit, "translator": h.get("translator", "linear")})
+                                             "fit": fit, "translator": h.get("translator", "linear"),
+                                             **self._trec_flag()})
         self._send(M.HELLO_ACK, self.hello_ack)
         self._apply_peer_caps(h, jload(self.hello_ack))
+
+    def _trec_flag(self) -> dict:
+        """HELLO field "trec": this side looks up T records (absent = no, so Telepathy-0 HELLOs stay
+        unchanged). Two sides that both look up exchange a plan before the anchors (SPEC.md 14.1)."""
+        return {"trec": 1} if self.opts.t_records is not None else {}
 
     def _apply_peer_caps(self, hello: dict, ack: dict):
         s = self.session
@@ -686,14 +728,25 @@ class Connection:
         s.N = min(mine["N"], peer["N"])
         s.d = min(mine["d"], peer["d"])
         s.bits = min(mine["bits"], peer["bits"])
+        s.batch = max(1, min(mine.get("batch", 1), peer.get("batch", 1)))
         s.local_dialect, s.peer_dialect, s.peer_model = mine["dialect"], peer["dialect"], peer["model"]
+        self.peer_trec = bool(peer.get("trec"))
+        mh, ph = mine.get("hub"), peer.get("hub")
+        if (mh and ph and mh.get("anchors") and mh.get("anchors") == ph.get("anchors")
+                and mh.get("dim") == ph.get("dim") and s.local_dialect != s.peer_dialect):
+            # hub mode: both sides speak the anchor set's coordinates; each keeps its own d locally
+            s.hub, s.wire_d, s.d = mh["anchors"], int(mh["dim"]), mine["d"]
+        else:
+            s.wire_d = s.d
         self.n_heldout = ack["heldout"]
         self.n_fit = ack["fit"]
         self.family = ack.get("translator", "linear")
         self.fsm.to(State.VERIFYING)
         self.log("hello", info=f"peer model={peer['model']} dialect={peer['dialect']} local={mine['dialect']} "
-                               f"N={s.N} d={s.d} bits={s.bits}" + (" MISMATCH" if s.local_dialect != s.peer_dialect else ""))
-        if mine["d"] != peer["d"] and mine["dialect"] != peer["dialect"]:
+                               f"N={s.N} d={s.d} bits={s.bits} batch={s.batch}"
+                               + (" MISMATCH" if s.local_dialect != s.peer_dialect else "")
+                               + (f" HUB {s.hub}" if s.hub else ""))
+        if mine["d"] != peer["d"] and mine["dialect"] != peer["dialect"] and not s.hub:
             self._reset("dimension mismatch between dialects (out of scope for Telepathy-0)")
 
     def _exchange_anchors(self, which_ids: list[tuple[str, int, int]]) -> dict:
@@ -706,6 +759,8 @@ class Connection:
         sent = []
         for which, n, base in which_ids:
             lat = codec.encode(which, n)[:, : s.N, : s.d]
+            if s.hub:
+                lat = np.asarray(codec.to_hub(lat), np.float32)
             for j in range(n):
                 if len(sent) >= ANCHOR_WINDOW:
                     o = self.out.get((int(M.ANCHOR), sent[-ANCHOR_WINDOW]))
@@ -731,7 +786,7 @@ class Connection:
                 self.cv.wait(HEARTBEAT)
         out = {}
         for which, n, base in which_ids:
-            arr = np.zeros((n, s.N, s.d), np.float32)
+            arr = np.zeros((n, s.N, s.wire_d or s.d), np.float32)
             for j in range(n):
                 for i, v in self.inc[(int(M.ANCHOR), base + j)].vecs.items():
                     arr[j, i] = v
@@ -741,6 +796,10 @@ class Connection:
     def _verify(self):
         s, o, codec = self.session, self.opts, self.caps.codec
         same = s.local_dialect == s.peer_dialect
+        if not same and s.hub:
+            with self._phase("hub", tlp__anchor_set=s.hub, tlp__anchors=self.n_heldout) as sp:
+                self._verify_hub(sp)
+            return
         if same or not self.n_fit:
             with self._phase("anchor", tlp__anchors=self.n_heldout) as sp:
                 self._verify_direct(sp)
@@ -765,21 +824,67 @@ class Connection:
             self._reset(f"anchor check failed (local {score:.3f}, peer {peer['score']:.3f})")
         self.fsm.to(State.KEYING)
 
+    def _verify_hub(self, sp=None):
+        """Hub mode: both sides send the held-out anchors in hub coordinates; each reads the peer's
+        through its own map out of hub coordinates. No NEGOTIATE, no fitting anchors, no fit."""
+        s, o, codec = self.session, self.opts, self.caps.codec
+        t0 = time.monotonic()
+        got = self._exchange_anchors([("heldout", self.n_heldout, 0)])
+        score = codec.score(np.asarray(codec.from_hub(got["heldout"]), np.float32), "heldout")
+        s.anchor_score = score
+        s.stats.negotiate_seconds = time.monotonic() - t0
+        self._send(M.ANCHOR_RESULT, jdump({"score": score, "n": self.n_heldout, "hub": s.hub}))
+        peer = jload(self._expect({M.ANCHOR_RESULT}, o.handshake_timeout).payload)
+        s.peer_anchor_score = peer["score"]
+        self.log("hub", info=f"anchor set {s.hub}: held-out score local {score:.3f}, peer {peer['score']:.3f}, "
+                             f"threshold {o.anchor_threshold}")
+        if sp is not None:
+            sp.set_attribute("tlp.hub.heldout_score", score)
+            sp.set_attribute("tlp.hub.peer_heldout_score", peer["score"])
+        if score < o.anchor_threshold or peer["score"] < o.anchor_threshold:
+            self._reset(f"hub check failed (local {score:.3f}, peer {peer['score']:.3f})")
+        s.translator, s.negotiated = HubTranslator(codec), "hub"
+        self.fsm.to(State.KEYING)
+
     def _verify_negotiate(self, sp=None):
-        """Different dialects: negotiate a translator from public anchors."""
+        """Different dialects: negotiate a translator from public anchors. With a T-record client,
+        look up a cached translator first (SPEC.md 14.1): a side with a hit skips its fit, and if
+        both sides hit, the fitting anchors are not sent at all. The held-out check always runs."""
         s, o, codec = self.session, self.opts, self.caps.codec
         from ..negotiate.translators import fit_translator
         t0 = time.monotonic()
         self.fsm.to(State.NEGOTIATING)
-        got = self._exchange_anchors([("fit", self.n_fit, FIT_BASE), ("heldout", self.n_heldout, 0)])
-        own_fit = codec.encode("fit", self.n_fit)[:, : s.N, : s.d]
-        tr = fit_translator(self.family, got["fit"], own_fit, seed=self.opts.translator_seed)
-        heldout = np.stack([tr.apply_message(m) for m in got["heldout"]])
+        cached = None
+        if o.t_records is not None:
+            try:
+                cached = o.t_records.lookup(s.peer_dialect, s.local_dialect, self.family)
+            except Exception as e:   # a resolver fault is a miss, never a failure of the session
+                self.log("t_record", info=f"lookup failed: {e!r}")
+            s.t_record = "hit" if cached is not None else "miss"
+            self.log("t_record", info=f"{s.peer_dialect} -> {s.local_dialect} {self.family}: {s.t_record}")
+        skip_fit = False
+        if o.t_records is not None and self.peer_trec:
+            self._send(M.NEGOTIATE, jdump({"plan": "cached" if cached is not None else "fit", "family": self.family}))
+            plan = jload(self._expect({M.NEGOTIATE}, o.handshake_timeout,
+                                      pred=lambda p: "plan" in jload(p.payload)).payload)
+            skip_fit = cached is not None and plan["plan"] == "cached"
+        sets = [("heldout", self.n_heldout, 0)] if skip_fit else [("fit", self.n_fit, FIT_BASE), ("heldout", self.n_heldout, 0)]
+        got = self._exchange_anchors(sets)
+        if cached is not None:
+            tr = cached[0]
+        else:
+            own_fit = codec.encode("fit", self.n_fit)[:, : s.N, : s.d]
+            tr = fit_translator(self.family, got["fit"], own_fit, seed=self.opts.translator_seed)
+        if getattr(tr, "message_level", False):
+            heldout = np.asarray(tr.apply_batch(got["heldout"]), np.float32)
+        else:
+            heldout = np.stack([tr.apply_message(m) for m in got["heldout"]])
         score = codec.score(heldout, "heldout")
         s.anchor_score = score
         s.stats.negotiate_seconds = time.monotonic() - t0
-        self._send(M.NEGOTIATE, jdump({"family": self.family, "score": score, "fit": self.n_fit}))
-        peer = jload(self._expect({M.NEGOTIATE}, o.handshake_timeout).payload)
+        self._send(M.NEGOTIATE, jdump({"family": self.family, "score": score, "fit": 0 if skip_fit else self.n_fit}))
+        peer = jload(self._expect({M.NEGOTIATE}, o.handshake_timeout,
+                                  pred=lambda p: "score" in jload(p.payload)).payload)
         s.peer_anchor_score = peer["score"]
         self.log("negotiate", info=f"family={self.family} anchors={self.n_fit} held-out score local {score:.3f} "
                                    f"peer {peer['score']:.3f}")
@@ -789,6 +894,11 @@ class Connection:
             sp.set_attribute("tlp.negotiate.seconds", s.stats.negotiate_seconds)
         if score < o.anchor_threshold or peer["score"] < o.anchor_threshold:
             self._reset(f"negotiation failed (local {score:.3f}, peer {peer['score']:.3f})")
+        if o.t_records is not None and cached is None:
+            try:
+                o.t_records.publish(s.peer_dialect, s.local_dialect, self.family, tr, score, o.t_ttl)
+            except Exception as e:
+                self.log("t_record", info=f"publish failed: {e!r}")
         s.translator, s.negotiated = tr, self.family
         self.fsm.to(State.VERIFYING, "negotiated")
         self.fsm.to(State.KEYING)
@@ -823,6 +933,10 @@ class Connection:
             body = {"sid": s.session_id, "peer": list(s.peer), "self": list(s.local), "role": s.role, "N": s.N, "d": s.d,
                     "bits": s.bits, "local_dialect": s.local_dialect, "peer_dialect": s.peer_dialect,
                     "routed": s.routed, "translator": s.negotiated, "wrapped": b64(wrapped)}
+            if s.batch != 1:
+                body["batch"] = s.batch
+            if s.hub:
+                body["hub"] = s.hub
             self._send(M.KEY_ESCROW, jdump(body), dst=(aud.ip, aud.ep))
         try:
             self._expect({M.ESCROW_ACK}, self.opts.escrow_timeout)
@@ -830,6 +944,29 @@ class Connection:
             self._reset("no ESCROW_ACK: no auditor, no session")
         s.audited = True
         self.fsm.to(State.ESTABLISHED)
+
+
+def max_batch(d: int, bits: int, batch: int, keyed: bool = True) -> int:
+    """Most slots that fit one DATA packet (1400 bytes with the header, the trace extension and
+    the AEAD tag), capped at the negotiated M."""
+    room = MAX_PACKET - HDR.size - EXT.size - (TAG_LEN if keyed else 0)
+    return max(1, min(int(batch), room // slot_payload_len(d, bits)))
+
+
+class HubTranslator:
+    """Hub mode on the receiving side: maps a message out of hub coordinates with the local codec's
+    from_hub. It needs the whole message, so the socket applies it when it assembles the slots."""
+    message_level = True
+    family = "hub"
+
+    def __init__(self, codec):
+        self.codec = codec
+
+    def apply_batch(self, x):
+        return np.asarray(self.codec.from_hub(np.asarray(x, np.float32)), np.float32)
+
+    def apply_masked(self, raw, mask):
+        return self.apply_batch(raw[None])[0]
 
 
 def _flagstr(f: int) -> str:

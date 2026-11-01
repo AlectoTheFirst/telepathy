@@ -17,12 +17,20 @@ class Capabilities:
     version: int = 0
     codec: Any = None  # local only: anchor codec (send + receive port of this model)
     purpose: int = 0   # task-level instruction for the sender (an intent code); never the query
+    batch: int = 4     # M: most slots per DATA packet this side accepts (Telepathy-1, SPEC.md 14.3)
+    hub: bool = False  # HUB capability: this side can send and read hub coordinates (SPEC.md 14.2)
+    anchor_set_id: str = ""   # the public anchor set that defines the hub coordinates
+    hub_dim: int = 0   # values per slot in hub coordinates
 
     def wire(self) -> dict:
         w = {"v": self.version, "N": self.N, "d": self.d, "bits": self.bits,
              "model": self.model_id, "dialect": self.dialect_id}
         if self.purpose:
             w["purpose"] = self.purpose
+        if self.batch != 1:          # absent = 1, so a Telepathy-0 HELLO is unchanged
+            w["batch"] = self.batch
+        if self.hub:
+            w["hub"] = {"anchors": self.anchor_set_id, "dim": self.hub_dim}
         return w
 
 
@@ -53,6 +61,8 @@ class TLPOptions:
     routed_factor: float = 0.9   # trust factor for a relayed session with an attested record
     unattested_factor: float = 0.5
     verdict_factor: float = 0.1  # trust multiplier after a probe VERDICT mismatch
+    t_records: Any = None        # T-record client: lookup(from, to, family) and publish(...) (SPEC.md 14.1)
+    t_ttl: float = 3600.0        # TTL of a published T record (s)
 
 
 @dataclass
@@ -67,6 +77,8 @@ class SessionStats:
     handshake_seconds: float = 0.0
     negotiate_bytes: int = 0
     negotiate_seconds: float = 0.0
+    keyed_packets: int = 0      # packets sent with an AEAD tag
+    data_packets: int = 0       # DATA packets sent, retransmits included
 
 
 @dataclass
@@ -93,4 +105,8 @@ class Session:
     keys: Any = None
     aead: Any = None          # crypto.aead.PacketAEAD after KEY_CONFIRM
     translator: Any = None
+    batch: int = 1                     # M: slots per DATA packet (min of both HELLOs)
+    hub: str | None = None             # anchor-set id when the session runs in hub mode
+    wire_d: int = 0                    # values per slot on the wire (d, or hub_dim in hub mode)
+    t_record: str | None = None        # "hit", "miss" or None (no lookup)
     stats: SessionStats = field(default_factory=SessionStats)

@@ -1,0 +1,87 @@
+{
+  "seed": 20261101,
+  "tokenizer": "Qwen/Qwen3-0.6B-Base",
+  "token_range": [
+    300,
+    500
+  ],
+  "splits": {
+    "train": {
+      "passages": 24000,
+      "questions": 239998,
+      "tokens": [
+        308,
+        480
+      ],
+      "facts": [
+        8,
+        12
+      ]
+    },
+    "val": {
+      "passages": 500,
+      "questions": 4982,
+      "tokens": [
+        316,
+        479
+      ],
+      "facts": [
+        8,
+        12
+      ]
+    },
+    "test": {
+      "passages": 1000,
+      "questions": 10017,
+      "tokens": [
+        310,
+        480
+      ],
+      "facts": [
+        8,
+        12
+      ]
+    },
+    "anchors": {
+      "passages": 288,
+      "questions": 2910,
+      "tokens": [
+        314,
+        480
+      ],
+      "facts": [
+        8,
+        12
+      ]
+    }
+  },
+  "fact_keys": [
+    "birth_city",
+    "birth_year",
+    "mentor",
+    "workshop_city",
+    "patents",
+    "award_year",
+    "books",
+    "spouse",
+    "children",
+    "dog",
+    "retire_city",
+    "sibling",
+    "rival",
+    "visit_city",
+    "staff",
+    "grad_year",
+    "name",
+    "field"
+  ],
+  "identity_keys": [
+    "name",
+    "field"
+  ],
+  "zipf_s": 1.1,
+  "anchors": {
+    "fit": 256,
+    "held_out": 32
+  }
+}

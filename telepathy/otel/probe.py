@@ -23,7 +23,7 @@ from ..crypto.kx import load_or_create_static, pub_bytes, unwrap_with
 from ..crypto.aead import AuthError, PacketAEAD, sender_direction
 from ..crypto.kx import SessionKeys
 from ..models.agent import load_ckpt
-from ..models.quant import decode_slot, quantize
+from ..models.quant import decode_slot, quantize, slot_payload_len
 from ..tlp.header import PROBE_EP, Flag, MsgType, Packet
 from ..tlp.messages import jdump, jload, unb64
 from ..tlp.session import Auditor
@@ -234,10 +234,13 @@ class ProbeService:
                         except AuthError:
                             self.sock.log("drop", sid=sid, slot=pkt.slot_index, info="probe: AEAD check failed")
                             return
-                x = decode_slot(plain, pkt.slot_dim, sess["bits"])
-                if sess["translator"] is not None:
-                    x = sess["translator"].apply_slot(pkt.slot_index, x)
-                m["vecs"][pkt.slot_index] = x
+                per = slot_payload_len(pkt.slot_dim, sess["bits"])
+                for j in range(pkt.n_slots):   # a batched DATA packet carries consecutive slots
+                    i = pkt.slot_index + j
+                    x = decode_slot(plain[j * per: (j + 1) * per], pkt.slot_dim, sess["bits"])
+                    if sess["translator"] is not None:
+                        x = sess["translator"].apply_slot(i, x)
+                    m["vecs"][i] = x
                 full = len(m["vecs"]) == m["count"]
             if full or pkt.flags & Flag.LAST_SLOT:
                 self._classify(sess, key)

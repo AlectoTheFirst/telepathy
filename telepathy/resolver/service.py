@@ -8,12 +8,14 @@ receiver until it has seen the probe's ESCROW_ACK for the session.
 from __future__ import annotations
 
 import itertools
+import queue
 import random
 import threading
+import time
 from dataclasses import dataclass
 
 from ..tlp.header import RESOLVER_EP, Flag, MsgType, Packet
-from ..tlp.messages import emb_decode, jdump, jload
+from ..tlp.messages import Reassembler, emb_decode, frag_encode, jdump, jload
 from ..sock.socket import TLPSocket
 from .records import RecordStore
 
@@ -47,6 +49,7 @@ class Resolver:
         self.lock = threading.Lock()
         self.require_audit = require_audit
         self.tracer = tracer        # optional OpenTelepathy hook: tracer.relay(entry, pkt, direction)
+        self._frags: dict[tuple, Reassembler] = {}   # T_PUBLISH reassembly by (ip, endpoint, sid)
 
     def close(self):
         self.sock.close()
@@ -58,11 +61,48 @@ class Resolver:
         self.sock.log("send", type=M(msg_type).name, sid=req.session_id,
                       info=obj.get("name") if isinstance(obj, dict) else None)
 
+    def _reply_frags(self, req: Packet, meta: dict, blob: bytes = b""):
+        for k, pl in enumerate(frag_encode(meta, blob)):
+            self.sock.send_packet(req.src_ip, Packet(M.T_REPLY, req.dst_endpoint, req.src_endpoint, req.session_id,
+                                                     k + 1, msg_id=k, payload=pl, ext=req.ext))
+            if k % 32 == 31:
+                time.sleep(0.002)   # pace long replies: the receiver's socket buffer is finite
+
+    def _t_record(self, pkt: Packet):
+        t = pkt.msg_type
+        if t == M.T_PUBLISH:
+            key = (pkt.src_ip, pkt.src_endpoint, pkt.session_id)
+            ra = self._frags.setdefault(key, Reassembler())
+            ra.add(pkt.msg_id, pkt.payload)
+            got = ra.done()
+            if got is None:
+                return
+            self._frags.pop(key, None)
+            meta, blob = got
+            self.store.trecs.publish(meta["from"], meta["to"], meta["family"], blob, meta.get("score", 0.0),
+                                     meta.get("ttl", 3600.0))
+            self.sock.log("recv", type="T_PUBLISH", sid=pkt.session_id,
+                          info=f"{meta['from']} -> {meta['to']} {meta['family']} ({len(blob)} bytes)")
+            self._reply_frags(pkt, {"ok": True, "op": "publish"})
+        elif t == M.T_LOOKUP:
+            q = jload(pkt.payload)
+            r = self.store.trecs.lookup(q["from"], q["to"], q["family"])
+            self.sock.log("recv", type="T_LOOKUP", sid=pkt.session_id,
+                          info=f"{q['from']} -> {q['to']} {q['family']}: {'hit' if r else 'miss'}")
+            if r is None:
+                self._reply_frags(pkt, {"ok": False, "op": "lookup"})
+                return
+            self._reply_frags(pkt, {"ok": True, "op": "lookup", "from": r.dialect_from, "to": r.dialect_to,
+                                    "family": r.family, "score": r.score, "ttl": r.ttl_left()}, r.blob)
+
     def _handle(self, pkt: Packet):
         if pkt.dst_endpoint != RESOLVER_EP and pkt.dst_endpoint in self.relays:
             self._relay(pkt)
             return
         t = pkt.msg_type
+        if t in (M.T_PUBLISH, M.T_LOOKUP):
+            self._t_record(pkt)
+            return
         if t == M.REGISTER:
             r = jload(pkt.payload)
             emb = emb_decode(r["emb"]) if r.get("emb") else None
@@ -158,3 +198,96 @@ def register(sock: TLPSocket, resolver: tuple[str, int], name: str, endpoint: in
         obj["emb"] = emb_encode(embedding)
     _, rep = sock.request(resolver, M.REGISTER, obj, {M.REGISTER_ACK})
     return rep
+
+
+# --------------------------------------------------------------------------- T records (SPEC.md 14.1)
+
+def _frag_request(sock: TLPSocket, dst: tuple[str, int], msg_type, payloads: list[bytes], timeout=2.0, retries=3):
+    """Send a (possibly fragmented) request and collect the fragmented T_REPLY. Returns (meta, blob,
+    bytes on the wire in both directions)."""
+    sock._autobind(dst[0])
+    sid = random.getrandbits(32) or 1
+    q: queue.Queue = queue.Queue()
+    sock._waiters[sid] = q
+    nbytes = 0
+    try:
+        for _ in range(retries):
+            for k, pl in enumerate(payloads):
+                raw = Packet(msg_type, sock.addr[1], dst[1], sid, k + 1,
+                             msg_id=k if len(payloads) > 1 or msg_type == M.T_PUBLISH else 0, payload=pl).encode()
+                sock._tx(dst[0], raw)
+                nbytes += len(raw)
+                if k % 32 == 31:
+                    time.sleep(0.002)
+            ra = Reassembler()
+            end = time.monotonic() + timeout
+            while time.monotonic() < end:
+                try:
+                    p = q.get(timeout=max(0.0, end - time.monotonic()))
+                except queue.Empty:
+                    break
+                if p.msg_type != M.T_REPLY:
+                    continue
+                nbytes += p.wire_len()
+                ra.add(p.msg_id, p.payload)
+                got = ra.done()
+                if got is not None:
+                    return got[0], got[1], nbytes
+        raise TimeoutError(f"no complete T_REPLY to {M(msg_type).name}")
+    finally:
+        sock._waiters.pop(sid, None)
+
+
+def t_publish(sock: TLPSocket, resolver, dialect_from: str, dialect_to: str, family: str, blob: bytes,
+              score: float, ttl: float = 3600.0) -> tuple[bool, int]:
+    meta = {"from": dialect_from, "to": dialect_to, "family": family, "score": float(score), "ttl": float(ttl)}
+    rep, _, nbytes = _frag_request(sock, resolver, M.T_PUBLISH, frag_encode(meta, blob))
+    return bool(rep.get("ok")), nbytes
+
+
+def t_lookup(sock: TLPSocket, resolver, dialect_from: str, dialect_to: str, family: str):
+    """Returns ((blob, score, ttl_left) or None, bytes on the wire)."""
+    obj = {"from": dialect_from, "to": dialect_to, "family": family}
+    rep, blob, nbytes = _frag_request(sock, resolver, M.T_LOOKUP, [jdump(obj)])
+    if not rep.get("ok"):
+        return None, nbytes
+    return (blob, rep.get("score", 0.0), rep.get("ttl", 0.0)), nbytes
+
+
+class TRecordClient:
+    """The T-record client a session uses (TLPOptions.t_records). dump(translator) -> bytes and
+    load(bytes) -> translator are supplied by the caller: the resolver stores opaque bytes, and a
+    receiver must only load blobs in a format that cannot run code. A hit is a cache entry, not a
+    trust anchor: the session still runs the held-out check on the translator it loads."""
+
+    def __init__(self, sock: TLPSocket, resolver, dump, load):
+        self.sock, self.resolver = sock, tuple(resolver)
+        self.dump, self.load = dump, load
+        self.lookups = self.hits = self.publishes = 0
+        self.bytes = 0
+        self.seconds = 0.0
+
+    def lookup(self, dialect_from, dialect_to, family):
+        t0 = time.monotonic()
+        try:
+            got, nbytes = t_lookup(self.sock, self.resolver, dialect_from, dialect_to, family)
+        finally:
+            self.seconds += time.monotonic() - t0
+        self.lookups += 1
+        self.bytes += nbytes
+        if got is None:
+            return None
+        self.hits += 1
+        blob, score, _ = got
+        return self.load(blob), score
+
+    def publish(self, dialect_from, dialect_to, family, translator, score, ttl=3600.0) -> bool:
+        t0 = time.monotonic()
+        try:
+            ok, nbytes = t_publish(self.sock, self.resolver, dialect_from, dialect_to, family,
+                                   self.dump(translator), score, ttl)
+        finally:
+            self.seconds += time.monotonic() - t0
+        self.publishes += 1
+        self.bytes += nbytes
+        return ok

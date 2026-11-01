@@ -46,3 +46,43 @@ def ack_parse(payload: bytes, count: int) -> tuple[int, set[int]]:
         if payload[1 + i // 8] >> (i % 8) & 1:
             got.add(i)
     return kind, got
+
+
+# ------------------------------------------------------------------ fragmented messages (T records)
+# T_PUBLISH and T_REPLY carry a JSON header and an opaque blob that can be far larger than one
+# packet. The message u32 json_len | json | blob is cut into chunks; fragment k is one packet with
+# msg_id = k and payload u16 total | chunk. A fragment fits one packet with the trace extension.
+FRAG_CHUNK = 1400 - 28 - 28 - 2
+MAX_FRAGMENTS = 0xFFFF
+
+
+def frag_encode(meta: dict, blob: bytes = b"") -> list[bytes]:
+    j = jdump(meta)
+    body = len(j).to_bytes(4, "big") + j + bytes(blob)
+    chunks = [body[i: i + FRAG_CHUNK] for i in range(0, len(body), FRAG_CHUNK)] or [b""]
+    if len(chunks) > MAX_FRAGMENTS:
+        raise ValueError(f"message of {len(body)} bytes needs more than {MAX_FRAGMENTS} fragments")
+    n = len(chunks).to_bytes(2, "big")
+    return [n + c for c in chunks]
+
+
+class Reassembler:
+    """Collects the fragments of one message (duplicates ignored). done() -> (meta, blob) or None."""
+
+    def __init__(self):
+        self.total = None
+        self.parts: dict[int, bytes] = {}
+
+    def add(self, index: int, payload: bytes):
+        if len(payload) < 2:
+            return
+        self.total = int.from_bytes(payload[:2], "big")
+        if index < self.total:
+            self.parts.setdefault(index, payload[2:])
+
+    def done(self):
+        if self.total is None or len(self.parts) < self.total:
+            return None
+        body = b"".join(self.parts[k] for k in range(self.total))
+        n = int.from_bytes(body[:4], "big")
+        return jload(body[4: 4 + n]), body[4 + n:]

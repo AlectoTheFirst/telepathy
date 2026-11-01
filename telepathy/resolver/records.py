@@ -59,6 +59,7 @@ class RecordStore:
     def __init__(self):
         self.names: dict[str, NameRecord] = {}
         self.krecs: dict[str, KRecord] = {}
+        self.trecs = TRecordStore()
 
     def register(self, name, ip, endpoint, model_id, dialect_id, embedding=None, tags=(), ttl=300.0):
         self.names[name] = NameRecord(name, ip, endpoint, model_id, dialect_id, ttl)
@@ -81,3 +82,41 @@ class RecordStore:
             if s > score:
                 best, score = name, s
         return (self.names[best], score) if best else None
+
+
+@dataclass
+class TRecord:             # Telepathy-1: a fitted translator, cached (SPEC.md 14.1)
+    dialect_from: str
+    dialect_to: str
+    family: str
+    blob: bytes            # opaque: serialised by the publisher, never interpreted by the resolver
+    score: float           # the publisher's held-out score when it fitted the translator
+    ttl: float = 3600.0
+    created: float = field(default_factory=time.time)
+
+    def alive(self) -> bool:
+        return time.time() < self.created + self.ttl
+
+    def ttl_left(self) -> float:
+        return max(0.0, self.created + self.ttl - time.time())
+
+
+class TRecordStore:
+    """Keyed by (dialect id from, dialect id to, family). A dialect id changes whenever weights
+    change, so a translator for old weights is simply never found."""
+
+    def __init__(self):
+        self.recs: dict[tuple[str, str, str], TRecord] = {}
+
+    def publish(self, dialect_from, dialect_to, family, blob: bytes, score: float, ttl: float = 3600.0) -> TRecord:
+        r = TRecord(dialect_from, dialect_to, family, bytes(blob), float(score), float(ttl))
+        self.recs[(dialect_from, dialect_to, family)] = r
+        return r
+
+    def lookup(self, dialect_from, dialect_to, family) -> TRecord | None:
+        key = (dialect_from, dialect_to, family)
+        r = self.recs.get(key)
+        if r is not None and not r.alive():
+            del self.recs[key]
+            return None
+        return r

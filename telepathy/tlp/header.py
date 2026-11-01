@@ -9,7 +9,7 @@ TLP_VERSION = 0
 IPPROTO_TLP = 253
 MAX_PACKET = 1400
 
-#            ver typ flg int src dst sid seq mid sidx scnt prio rsv sdim plen csum
+#            ver typ flg int src dst sid seq mid sidx scnt prio batch sdim plen csum
 HDR = struct.Struct("!BBBBHHIIHBBBBHHH")
 EXT = struct.Struct("!16s8sB3x")  # W3C trace context: trace_id, parent_span_id, trace_flags, pad
 assert HDR.size == 28 and EXT.size == 28
@@ -40,6 +40,9 @@ class MsgType(IntEnum):
     ESCROW_ACK = 18
     VERDICT = 19
     NEGOTIATE = 20
+    T_PUBLISH = 21     # Telepathy-1: publish a fitted translator (T record) to the resolver
+    T_LOOKUP = 22      # Telepathy-1: look up a T record
+    T_REPLY = 23       # Telepathy-1: T record reply (fragments) or publish acknowledgement
 
 
 class Flag(IntFlag):
@@ -86,6 +89,7 @@ class Packet:
     slot_dim: int = 0
     payload: bytes = b""
     ext: TraceExt | None = None
+    slot_batch: int = 0      # slots in this DATA packet (0 = one slot); the former reserved byte
     version: int = TLP_VERSION
     # filled in by the transport on receive (not on the wire in the TLP header)
     src_ip: str = field(default="", compare=False)
@@ -101,7 +105,7 @@ class Packet:
         ext = self.ext.pack() if self.ext is not None else b""
         fields = (self.version, int(self.msg_type), int(flags), self.intent, self.src_endpoint, self.dst_endpoint,
                   self.session_id, self.seq & 0xFFFFFFFF, self.msg_id & 0xFFFF, self.slot_index, self.slot_count,
-                  self.slot_priority, 0, self.slot_dim, len(self.payload), 0)
+                  self.slot_priority, self.slot_batch, self.slot_dim, len(self.payload), 0)
         raw = HDR.pack(*fields) + ext + self.payload
         cs = checksum(raw)
         raw = raw[:26] + struct.pack("!H", cs) + raw[28:]
@@ -133,7 +137,12 @@ class Packet:
         except ValueError as e:
             raise PacketError(f"unknown msg_type {typ}") from e
         return cls(mt, src, dst, sid, seq, flags, intent, mid, sidx, scnt, prio, sdim,
-                   bytes(buf[off: off + plen]), ext, ver)
+                   bytes(buf[off: off + plen]), ext, rsv, ver)
+
+    @property
+    def n_slots(self) -> int:
+        """Slots carried by this packet: slot_index .. slot_index + n_slots - 1."""
+        return max(1, self.slot_batch)
 
     def wire_len(self) -> int:
         return HDR.size + (EXT.size if self.ext is not None else 0) + len(self.payload)

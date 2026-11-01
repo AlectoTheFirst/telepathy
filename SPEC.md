@@ -44,7 +44,7 @@ The header is 28 bytes, in network byte order, with the fields in this order. Ev
 | 18 | u8 | slot_index | Position of this slot in the message |
 | 19 | u8 | slot_count | Total slots in the message |
 | 20 | u8 | slot_priority | 0 = highest. Slots go out in priority order. |
-| 21 | u8 | reserved | Zero. It pads the header to 28 bytes. |
+| 21 | u8 | slot_batch | Slots in this DATA packet (section 14.3). 0 = one slot. Zero on other types. In Telepathy-0, this byte was reserved and zero. |
 | 22 | u16 | slot_dim | Values per slot |
 | 24 | u16 | payload_len | Payload bytes |
 | 26 | u16 | checksum | See below |
@@ -62,7 +62,7 @@ There is no trust field. The receiver assigns trust (section 8). A trust claim f
 | ACK_REQ | 0x10 | Retransmission. The receiver sends an ACK at once. |
 | EXT_TRACE | 0x20 | The 28-byte trace extension header follows the base header. |
 
-**Size limit.** Every TLP packet is at most 1400 bytes, so that it also fits an Ethernet MTU. A DATA packet carries one slot. At d = 32 and float16, a DATA packet is 28 + 64 = 92 bytes, or 120 bytes with EXT_TRACE.
+**Size limit.** Every TLP packet is at most 1400 bytes, so that it also fits an Ethernet MTU. Without slot batching, a DATA packet carries one slot. With slot batching, a DATA packet carries up to M slots (section 14.3). At d = 32 and float16, a DATA packet is 28 + 64 = 92 bytes, or 120 bytes with EXT_TRACE.
 
 ### 2.1 Trace extension header (EXT_TRACE)
 
@@ -117,7 +117,10 @@ Control payloads are compact JSON (UTF-8, sorted keys). Latent and key payloads 
 | 17 | KEY_ESCROW | JSON `{sid, self, peer, N, d, bits, local_dialect, peer_dialect, routed, translator, wrapped}`. `wrapped` = base64(eph_pub ‖ nonce ‖ AES-GCM(seed)), with associated data = sid. |
 | 18 | ESCROW_ACK | JSON `{sid, ok}`. The probe sends it to both peers. |
 | 19 | VERDICT | JSON `{sid, msg_id, declared, observed, confidence, match, slots, read_in}` |
-| 20 | NEGOTIATE | JSON `{family, score, fit}`: the translator family and this side's held-out score |
+| 20 | NEGOTIATE | JSON `{family, score, fit}`: the translator family and this side's held-out score. With T records on both sides, a first NEGOTIATE `{plan, family}` comes before the anchors (section 14.1). |
+| 21 | T_PUBLISH | Fragmented message (section 14.1): JSON `{from, to, family, score, ttl}` and the translator blob |
+| 22 | T_LOOKUP | JSON `{from, to, family}` |
+| 23 | T_REPLY | Fragmented message: JSON `{ok, op}`. For a lookup hit, also `from`, `to`, `family`, `score` and `ttl` (the time left), and the blob. |
 
 ## 5. Session state
 
@@ -287,3 +290,78 @@ TLP over UDP is the default transport (`telepathy/tlp/transport.py`, `UdpTranspo
 - **Tap.** For the probe, every UDP transport also sends a copy of each datagram to the tap port (endpoint 3). A socket gives a tap copy only to its tap handler, and it ignores a tap copy of a packet that is addressed to itself, because that packet also arrives directly.
 
 **Consequence: the UDP tap is cooperative.** In Telepathy-0, the endpoints themselves send the copies to the tap port. Two peers that collude can turn off their own mirroring and talk directly, without escrow. The probe then sees nothing, and its unaudited-session alert (section 11) never fires. The alert catches a direct session without escrow only when the mirror sits in the network, on the path between the peers (a switch port mirror or a middlebox), where the endpoints cannot turn it off. Routed sessions are different: the relay drops DATA until it sees ESCROW_ACK (section 10), so collusion through the resolver still needs a forged probe. Over raw IP on loopback, the kernel gives the probe every packet, so the tap there does not depend on the endpoints.
+
+## 14. Telepathy-1 additions
+
+Telepathy-1 adds three functions to TLP: the T record, hub mode and slot batching. Nothing else in the protocol changes. A Telepathy-0 peer does not send the new HELLO fields, and a peer without them gets the Telepathy-0 behaviour.
+
+The new HELLO and HELLO_ACK fields are:
+
+| Field | Meaning | Absent |
+| --- | --- | --- |
+| `batch` | M: the most slots per DATA packet that this side accepts | 1 |
+| `hub` | `{anchors, dim}`: the HUB capability, the anchor-set id and the values per slot in hub coordinates | No HUB capability |
+| `trec` | 1: this side looks up T records before it negotiates | No lookup |
+
+### 14.1 T record
+
+A T record is a fitted translator that the resolver keeps. The key is (dialect id from, dialect id to, family). The record also holds the held-out score of the publisher and a TTL.
+
+| Field | Meaning |
+| --- | --- |
+| from | The dialect id of the sender of the latents |
+| to | The dialect id of the receiver, which applies the translator |
+| family | The translator family, for example `shared_mlp` |
+| blob | The translator, serialised by the publisher. The resolver does not read it. |
+| score | The held-out score of the publisher when it fitted the translator |
+| ttl | Seconds. After the TTL, a lookup misses and the resolver deletes the record. |
+
+**Messages.** T_LOOKUP is one packet. T_PUBLISH and T_REPLY are fragmented, because a translator is larger than one packet. The message is `u32 json_len ‖ json ‖ blob`. The sender cuts it into chunks of 1342 bytes. Fragment k is one packet with msg_id = k, and its payload is `u16 total ‖ chunk`. The request and its reply use the same session id. The resolver sends T_REPLY when it has all fragments of a T_PUBLISH. The client sends the request again if the reply is not complete before its timeout. A message can have up to 65535 fragments.
+
+**Handshake.** A T record changes the negotiation of section 6.1 as follows:
+
+1. After HELLO, each side with a T-record client looks up (peer dialect, own dialect, family). A resolver fault counts as a miss.
+2. If both sides sent `trec`, each side sends NEGOTIATE `{plan, family}`. The plan is `cached` after a hit, and `fit` after a miss.
+3. If both plans are `cached`, the peers send only the held-out anchors. They do not send the fitting anchors, and neither side fits.
+4. Otherwise, the peers send the fitting anchors and the held-out anchors as in section 6.1. A side with a hit uses the cached translator and does not fit. A side with a miss fits.
+5. Each side scores the held-out anchors through its translator and sends NEGOTIATE with the score. The gate is the same as in section 6.1.
+6. A side that fitted a translator and passed the gate publishes it with T_PUBLISH.
+
+A dialect id changes when the weights change. Thus a T record for old weights does not match the new dialect id, and the lookup misses.
+
+**A T record is a cache, not a trust anchor.** The held-out check runs on every session, also after a hit. A record from the resolver gives no trust. Only the held-out score of the current session is an input to the effective trust (section 8). The resolver can give a bad translator, and the held-out check then fails closed. The blob comes from the network. Thus a receiver must load it only in a format that cannot run code. `TRecordClient` takes the serialiser and the loader from the caller for this reason.
+
+The session records the result of the lookup in `Session.t_record`: `hit`, `miss`, or none when no lookup occurred. `TRecordClient` counts the lookups, the hits, the bytes and the seconds for experiment E7.
+
+### 14.2 Hub mode
+
+In hub mode, each model expresses a slot in the coordinates of a public anchor set. An example is the relative representation: the cosine similarities of a slot to the model's own encodings of the anchors. The anchor set is a common language for all models. No translator exists for a pair of models, so the number of translators does not grow with the number of pairs.
+
+**HELLO.** A peer with the HUB capability sends `hub: {anchors, dim}`. Hub mode applies when all of these conditions are true:
+- The dialect ids are different.
+- Both peers send `hub`.
+- The anchor-set ids are the same and not empty.
+- The values per slot in hub coordinates are the same.
+
+If one condition is false, the peers negotiate as in section 6.1. Hub mode does not need the same d on the two sides, because each side keeps its own d locally.
+
+**Verification.** The peers do not send NEGOTIATE and do not send the fitting anchors. Each side encodes the held-out anchors with its own send port, changes them into hub coordinates, and sends them. Each side changes the peer's anchors out of hub coordinates with its own map, reads them, and scores them. The peers exchange the scores in ANCHOR_RESULT. The gate is the same as in section 6.1.
+
+**Data.** The sender changes each message into hub coordinates before it sends the message. slot_dim is then the hub dimension. The receiver changes the message out of hub coordinates when it assembles the slots. The map can need the complete message, so the receiver applies it to the present slots together, with zeros for the missing slots. The codec of each model supplies the two maps, `to_hub` and `from_hub`.
+
+**Hub mode trades accuracy for interoperability.** A translator that is fitted for one pair can be more accurate than a map through a common coordinate system. Experiment E2 measures the accuracy of hub mode against a fitted translator. A peer that needs the higher accuracy can leave the HUB capability off, and then the peers negotiate.
+
+The intent probe does not read hub coordinates in Telepathy-1. KEY_ESCROW carries `hub` (the anchor-set id) so that the probe knows that a session runs in hub mode.
+
+### 14.3 Slot batching
+
+Telepathy-0 sends one slot per DATA packet. Each slot thus has its own 28-byte header and its own 16-byte AEAD tag. With slot batching, one DATA packet carries up to M consecutive slots, with one header and one tag.
+
+- **Negotiation.** M is the smaller of the two `batch` values in HELLO and HELLO_ACK. The default in Telepathy-1 is 4. A peer that does not send `batch` has M = 1.
+- **Size.** A packet holds at most the number of slots that fit in 1400 bytes, with the header, the trace extension and the AEAD tag. At d = 128 and b = 16, a slot is 256 bytes, so a packet holds at most 5 slots.
+- **Format.** slot_index is the first slot in the packet, and slot_batch is the number of slots. The payload is the slot encodings of section 3, one after the other. A keyed payload has one AEAD tag for all of its slots. slot_batch is in the associated data.
+- **Order.** The packets go out in priority order, and each packet carries consecutive slots. The sender packs the protected prefix and the best-effort slots in separate packets. Thus a packet is either PROTECTED or best-effort.
+- **Loss handling.** The packet is the unit. The ACK bitmap stays per slot. The sender retransmits each packet that holds a missing protected slot. If a packet is lost, all of its slots are missing. Partial delivery and progressive delivery are as in section 7. LAST_SLOT is on the packet that holds the last slot.
+- **ANCHOR messages** stay at one slot per packet.
+
+With M = 1, the packets are the same as in Telepathy-0, and slot_batch is 0. Experiment E1 reports the overhead with batching and without it.

@@ -52,7 +52,7 @@ def model_capabilities(ckpt: str, side: str = "A", bits: int = 16, N: int | None
     mc = meta["model"]
     codec = ModelCodec(m, m, td, N or mc["N"], mc["d"])
     return Capabilities(N=N or mc["N"], d=mc["d"], bits=bits, model_id=meta["model_ids"][side],
-                        dialect_id=meta["dialect_id"], codec=codec)
+                        dialect_id=meta["dialect_id"], codec=codec, batch=1)
 
 
 @lru_cache(maxsize=16)

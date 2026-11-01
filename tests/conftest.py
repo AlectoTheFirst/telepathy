@@ -58,9 +58,10 @@ class FakeCodec:
         return float((dist.argmin(1) == np.arange(n)).mean())
 
 
-def caps(dialect_seed=0, N=4, d=8, bits=16):
+def caps(dialect_seed=0, N=4, d=8, bits=16, batch=1, **kw):
+    """batch = 1 (one slot per DATA packet) keeps the Telepathy-0 tests on the Telepathy-0 wire format."""
     return Capabilities(N=N, d=d, bits=bits, model_id=f"m{dialect_seed}", dialect_id=f"dia{dialect_seed}",
-                        codec=FakeCodec(dialect_seed, N, d))
+                        codec=FakeCodec(dialect_seed, N, d), batch=batch, **kw)
 
 
 def opts(**kw):
