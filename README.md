@@ -24,7 +24,7 @@ Use `.venv/bin/python` and `.venv/bin/pytest` for every command.
 | `sudo .venv/bin/pytest tests/test_raw.py` | Raw IP protocol 253 on loopback | ~2 s |
 | `.venv/bin/python scripts/train.py` | 9 training runs in parallel processes, written to `checkpoints/` | ~4 min |
 | `.venv/bin/python scripts/train.py --zipf` | 5 more runs with Zipf value queries (RESULTS.md 6.3b and 6.7b) | ~10 min |
-| `.venv/bin/python scripts/run_experiments.py` | 16 experiments, written to `results/*.json` and `results/*.png` | ~47 min |
+| `.venv/bin/python scripts/run_experiments.py` | 17 experiments, written to `results/*.json` and `results/*.png` | ~70 min |
 | `.venv/bin/python scripts/demo.py` | Resolver, probe, A1, A2, A′ and B as separate processes over TLP over UDP, with an interleaved log and the trace tree | ~15 s |
 | `sudo .venv/bin/python scripts/demo.py --transport raw` | The same over raw IP protocol 253 | ~15 s |
 | `.venv/bin/python scripts/demo.py --transport inproc` | The same scenario in one process | ~10 s |
@@ -38,7 +38,7 @@ To export spans to Jaeger (or another OTLP collector) as well as to the JSONL fi
 
 - **TLP over UDP (default).** Each TLP packet is one UDP datagram, without change. The UDP port comes from the destination endpoint in the TLP header (SPEC.md section 13). The base port for endpoints below 1024 is `TLP_UDP_BASE` (default 47000). Each transport also copies every datagram to the tap port for the intent probe.
 - **In-process bus.** For tests and single-process runs.
-- **Raw IP protocol 253.** Needs root. The raw transport is not verified until `sudo .venv/bin/pytest tests/test_raw.py` passes on the machine. On this Mac, those tests passed once as root, before the AEAD and UDP changes. Run them again to verify the current code.
+- **Raw IP protocol 253.** Needs root. Verified on 2026-11-01 on this Mac for the current code (AEAD, the send window and the shared MLP). As root, `sudo .venv/bin/pytest tests/test_raw.py` gave `2 passed in 0.04s`, and `sudo .venv/bin/python scripts/demo.py --transport raw` completed every run. The demo trace of that run is `results/demo_trace.jsonl`. It is a local file, because `.gitignore` excludes `results/*.jsonl`.
 
 ### Raw sockets on macOS and Linux
 
@@ -61,7 +61,7 @@ telepathy/
   crypto/      X25519/HKDF/HMAC, escrow wrapping, per-packet AES-GCM (aead.py)
   negotiate/   anchor codec and translator families (per slot, shared across slots, full message)
   otel/        tracer setup, JSONL exporter, span helpers, intent probe
-  experiments/ one script for each experiment in sections 6, 8 and 10, plus n3_diagnostics (10.3) and n4_gate (10.4)
+  experiments/ one script for each experiment in sections 6 (e1 to e8), 8 and 10, plus n3_diagnostics (10.3) and n4_gate (10.4)
 docs/          telepathy1_gate_test.md (a specification for later, not run)
 scripts/       train.py demo.py probe.py run_experiments.py
 tests/
@@ -92,3 +92,8 @@ These are differences from the brief's layout:
 - **LatentMAS** (Zou et al., arXiv:2511.20639) is training-free collaboration in latent space through a shared latent working memory. Telepathy-0 has no shared memory: the two models are separate processes, with a key exchange and an audit between them.
 - **K-V cache alignment** (Dery et al., arXiv:2601.06123) learns adapters into a shared representation space for the k-v caches of several models, with the pretrained weights frozen. Telepathy-0 negotiates a translator at connection time from public anchors, and the session fails closed when the held-out check fails.
 - **Latent channels against text** (Wenzel, arXiv:2607.14103) compares sparse-latent, dense-latent and text channels between language model agents, and finds that the latent channel matches but never exceeds text on its concept tasks. It also aligns Llama and Mistral with Procrustes. Telepathy-0 measures its link against text and a binary codec under a byte budget, and studies what such a channel needs from the network.
+- **Latent Cache Flow** (Rossi, Raghunath and Wu, arXiv:2605.22863) replaces the separate key and value fusers of Cache-to-Cache with one shared low-dimensional latent bottleneck. Its variant LCF-X "summarizes the sharer's full KV cache into a fixed-size tensor": one vector per head for K and one for V, whatever the context length. That fixed-size cache summary is the same message unit as the slots of Telepathy-0's send port: a fixed number of vectors, independent of the input length. The paper does not describe a transport. Telepathy-0 is the network layer for such a unit.
+- **The survey "Beyond Tokens"** (Liu, arXiv:2606.05711) names open problems for latent communication between LLM agents in its section 7. Telepathy-0 addresses three of them, in part:
+  - *Cross-architecture alignment* (7.1). The survey asks for translators that keep task-relevant information, and for evaluation that separates pair memorisation from transfer. Telepathy-0 fits its translator at connection time, scores it on held-out anchors that the fit never saw, and fails closed below the gate. Its two dialects share one architecture and differ only in training seed, so it does not test alignment across architectures.
+  - *Secure latent channels* (7.2). The survey lists in-transit modification, privacy leakage from activations, and senders that are valid but harmful. Telepathy-0 seals each DATA packet with AES-256-GCM against modification and taps, and an escrowed intent probe audits the content. That audit is weak, because the declared purpose is written into every slot (RESULTS.md 8.1).
+  - *Edge compression* (7.3 and 7.7). The survey asks for task utility per transmitted byte and for evaluation under intermittent links. Telepathy-0 reports accuracy per payload bit (RESULTS.md 6.2), and accuracy, bytes and latency under packet loss (6.7 and 6.8). It does not measure energy.

@@ -8,7 +8,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 EXPERIMENTS = ["e1_link", "e2_bandwidth", "e3_progressive", "e4_trust", "e5_dialect", "e6_monitor_tap",
-               "e7_transport", "t1_probe_acc", "t2_mismatch_roc", "t3_probe_key", "t4_trace_overhead",
+               "e7_transport", "e8_bits_under_loss", "t1_probe_acc", "t2_mismatch_roc", "t3_probe_key", "t4_trace_overhead",
                "t5_trust_loop", "n1_anchors", "n2_cost", "n3_diagnostics", "n4_gate"]
 
 

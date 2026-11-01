@@ -93,3 +93,18 @@ def test_tcp_and_udp_disciplines():
             assert mask.all()
         assert conn.session.stats.retransmits == expect_retx
         c.close(), s.close()
+
+
+def test_byte_message_keyed_and_retransmitted():
+    """send_bytes: one keyed DATA packet with slot_dim = 0. TCP-like retransmits it when lost,
+    and the receiver gets the bytes back unchanged."""
+    payload = bytes(range(256)) * 2
+    drop = DropOnce({0})
+    s, c, conn = _pair_with_server_drops(drop)
+    conn.opts.reliability = "tcp"
+    c.opts.reliability = "tcp"
+    conn.send_bytes(payload)
+    assert c.recv_bytes(timeout=5.0) == payload
+    assert conn.session.stats.retransmits == 1
+    assert conn.session.stats.auth_failures == 0 and c.session.stats.auth_failures == 0
+    c.close(), s.close()

@@ -8,9 +8,9 @@ The eval set is 2000 value queries at K = 8, with the hint absent, unless a sect
 | --- | --- |
 | `scripts/train.py` (9 runs in parallel, one thread each) | 247 s (latent runs about 238 s each) |
 | `scripts/train.py --zipf` (5 runs; the two 12000-step runs are the longest) | about 9.5 min |
-| `scripts/run_experiments.py` (16 experiments, TLP over UDP, AEAD) | about 47 min (sum of the measured parts below) |
+| `scripts/run_experiments.py` (17 experiments, TLP over UDP, AEAD) | about 70 min (sum of the measured parts below) |
 
-The suite was not timed again as one run after the last changes. The measured parts: e7 509 s for the three 100-message sweeps plus 641 s for the 1000-message 30% cell, n3 1371 s (5 seeded fits for each MLP row), n1 122 s, n4 86 s, e6 38 s, and less than 15 s for each of the others. The protocol experiments (e5, e7, t5, n2, n4) run over TLP over UDP on loopback. Keyed DATA is AES-256-GCM.
+The suite was not timed again as one run after the last changes. The measured parts: e7 509 s for the three 100-message sweeps, plus 641 s for the 1000-message 30% cell on Zipf queries and about 670 s for the same cell on uniform queries (from file times), e8 732 s, n3 1371 s (5 seeded fits for each MLP row), n1 122 s, n4 86 s, e6 38 s, and less than 15 s for each of the others. The protocol experiments (e5, e7, e8, t5, n2, n4) run over TLP over UDP on loopback. Keyed DATA is AES-256-GCM.
 
 ## Summary
 
@@ -20,13 +20,17 @@ The suite was not timed again as one run after the last changes. The measured pa
    - Bits for 0.99 accuracy: binary codec 88, text 416, latent 640. The information floor is 66.8 bits.
    - Below 512 bits, latent and text take turns: latent is ahead at 192 bits (0.52 against 0.47) and 384 bits (0.98 against 0.86), and text is ahead at 256 bits (0.59 against 0.52) and 320 bits (0.74 against 0.52). There is no single crossover.
    - The codec (4-bit key + 7-bit value per entry) beats both at every budget from 24 bits up.
-2. **Loss handling works as designed (a mechanism check).** On TLP over UDP at 10% loss, TLP gets 0.97 accuracy with a 61 ms final answer. TCP-like gets 1.00 at 88 ms, and plain datagrams get 0.86 at 47 ms. The order is by construction. The measured part is the cost and the gap size. With Zipf queries and a pair that orders its slots by popularity, TLP keeps a larger share of TCP-like accuracy at 30% loss (0.92 against 0.81, difference 0.105 ± 0.026, 1000 messages per cell). But that pair reaches only 0.80 without loss, so control TLP is still better in absolute accuracy (0.81 against 0.73) (6.3b, 6.7b).
+2. **Loss handling works as designed (a mechanism check).** On TLP over UDP at 10% loss, TLP gets 0.97 accuracy with a 61 ms final answer. TCP-like gets 1.00 at 88 ms, and plain datagrams get 0.86 at 47 ms. The order is by construction. The measured part is the cost and the gap size. With Zipf queries and a pair that orders its slots by popularity, TLP keeps a larger share of TCP-like accuracy at 30% loss on Zipf queries (0.92 against 0.81, difference 0.105 ± 0.026, 1000 messages per cell). But that pair reaches only 0.80 without loss, so control TLP is still better in absolute accuracy (0.811 against 0.726 on Zipf queries, and 0.793 against 0.602 on uniform queries) (6.3b, 6.7b).
+   - Against text compressed with zstd and sent as one reliable packet, the latent link loses at every loss level from 0% to 30% (6.8). To its first correct answer, latent needs 894 to 1006 bytes on the wire, and text needs 122 to 217. Text stays at 1.000 accuracy, and latent falls to 0.808 at 30% loss. Only the first partial answer is faster with latent (26 to 31 ms, against 27 to 85 ms).
 3. **Discovery, verification and keying work.**
    - Routing by knowledge finds the right holder.
    - The anchor check passes for the same dialect (score 1.00) and fails for a different dialect (0.03).
    - DATA is AES-256-GCM per packet. A tap without the key recovers 0.06% of the table entries (chance). With the escrowed key, it recovers 100%.
 4. **OpenTelepathy catches mislabelled messages, in a weak sense.** It detects 97% of them with 0% false positives (AUC 0.996), and its verdicts reduce the influence of a lying peer. But the sender's purpose input is written into every slot, so the observed intent is in effect a second declared-intent field. The result is not evidence against a sender that hides its intent (section 8.1).
-5. **Negotiation between strangers works at d = 32 with one translator shared across slots, and works only in part at d = 16.** With 256 anchors, the shared MLP passes the held-out check in both directions (0.99 ± 0.01 and 0.97 ± 0.00 over 5 fits), and real sessions answer 0.995 ± 0.002 of queries. No linear map exists between two dialects, per slot or for the full message, even with 4096 anchors. A per-slot MLP has too few samples (0.16 in the first version of this file, 0.23 ± 0.03 over 5 fits). At d = 16, held-out is 0.74 ± 0.03, and the link answers 0.750 ± 0.010 of queries. A gate of 0.80 passes 1 fit in 5 (sections 10.3 and 10.4).
+5. **A shared nonlinear translator negotiates a working dialect at d = 32 with 256 anchors. At d = 16 it does not. Per-slot translators fail at every width.** The headline metric is the translation loss: the jointly trained pair's accuracy minus the negotiated link's accuracy, on the same 200 queries, mean ± SE over 5 fits (section 10.0).
+   - At d = 32, the link answers 0.995 ± 0.002 against 1.000, a loss of 0.005 ± 0.002. 5/5 fits pass the gate (0.90).
+   - At d = 16, the link answers 0.750 ± 0.010 against 0.935, a loss of 0.185 ± 0.010. 0/5 fits pass the gate.
+   - No linear map exists between two dialects, per slot or for the full message, even with 4096 anchors. A per-slot MLP has too few samples (held-out 0.23 ± 0.03 at d = 32). Sections 10.3 and 10.4 give the reasons and the gate measurements.
 
 ## Training notes (what it took to train in under 5 minutes)
 
@@ -132,7 +136,7 @@ With uniform queries, every table entry has the same value, so no slot order can
 - With the default prior (3.0), the Zipf-trained sender does not reorder anything. Slot i still carries table position i, and the curves are the same as the control. The strong prior fixes the slot order before the query skew can act.
 - With a weak prior, the sender routes the popular entries into slot 0 by content. One slot then answers 38% of Zipf queries, against 15% for the control. The top-ranked key is answered at 0.95 to 0.99 from the protected half alone.
 - The cost is the rare entries. The best Zipf pair (prior 1.0, 12000 steps) reaches only 0.81 on Zipf queries and 0.69 on uniform queries with all 8 slots, against 1.00 for the control. The ranks 8 to 15 get 0.48 with all slots. Several slots carry copies of the popular entries (the query mass of slots 0 and 5 is 0.37 each).
-- The best Zipf pair fails its own same-dialect anchor check (0.84 and 0.81, against 0.9). The anchors use the same Zipf queries.
+- The best Zipf pair fails its own same-dialect anchor check (0.84 and 0.81, against the gate 0.90). The anchors use the same Zipf queries.
 - Text caveat: the popularity order is a fixed random permutation (seed 4242). By chance, the four most popular keys are k1 to k4, so the key-sorted text sends them first. The text row is therefore in effect "text sorted by popularity".
 
 The progressive gain is real only in the prefix. At 1 to 5 slots, the best Zipf pair beats the control on Zipf queries (0.38 against 0.15 at 1 slot, 0.63 against 0.51 at 4, 0.71 against 0.64 at 5). From 6 slots on, the control is better.
@@ -155,7 +159,7 @@ The correct and mismatched curves start at the same point at t = 0 and diverge a
 
 ## 6.5 Dialect mismatch — `e5_dialect.png`
 
-- **Cross-seed handshake (A′ to B).** It fails at ANCHOR. The local score is 0.031 and the peer score is 0.000, against a threshold of 0.9. The session closes with RESET.
+- **Cross-seed handshake (A′ to B).** It fails at ANCHOR. The local score is 0.031 and the peer score is 0.000, against the gate 0.90. The session closes with RESET.
 - **Same-dialect handshake.** The anchor scores are 1.00 and 0.97.
 
 | Pair | Accuracy |
@@ -217,17 +221,53 @@ The same sweep on Zipf(1) value queries, with two pairs: the best Zipf pair (pri
 
 **The relative gap opens a little, but the absolute result is worse.**
 - With the Zipf pair, TLP keeps 87% of TCP-like accuracy at 30% loss and 94% at 20%. The control keeps 77% and 90%. Datagrams keep 72% with the Zipf pair and 68% with the control. The protected half holds the popular entries, so a lost best-effort slot costs less.
-- The 100-message cells above cannot settle these differences. The 30% loss cell was therefore run again with 1000 messages per cell (`results/e7_zipf_cell.json`; SE of a share by bootstrap over messages):
+- The 100-message cells above cannot settle these differences. The 30% loss cell was therefore run again with 1000 messages per cell, under both query distributions. The Zipf rows are `results/e7_zipf_cell.json`, and the uniform rows are `results/e7_zipf_cell_uniform.json`. The SE of a share comes from a bootstrap over messages.
 
-| 30% loss, Zipf queries, 1000 messages | TLP acc ± SE | TCP-like acc ± SE | TLP share of TCP-like ± SE |
-| --- | --- | --- | --- |
-| Zipf pair | 0.726 ± 0.014 | 0.790 ± 0.013 | 0.919 ± 0.023 |
-| Uniform-trained control | 0.811 ± 0.012 | 0.996 ± 0.002 | 0.814 ± 0.013 |
+| 30% loss, 1000 messages | Queries | TLP acc ± SE | TCP-like acc ± SE | TLP share of TCP-like ± SE |
+| --- | --- | --- | --- | --- |
+| Zipf pair | Zipf(1) | 0.726 ± 0.014 | 0.790 ± 0.013 | 0.919 ± 0.023 |
+| Uniform-trained control | Zipf(1) | 0.811 ± 0.012 | 0.996 ± 0.002 | 0.814 ± 0.013 |
+| Zipf pair | Uniform | 0.602 ± 0.015 | 0.698 ± 0.015 | 0.862 ± 0.029 |
+| Uniform-trained control | Uniform | 0.793 ± 0.013 | 0.996 ± 0.002 | 0.796 ± 0.013 |
 
-  The share that TLP keeps is higher with the Zipf pair by **0.105 ± 0.026** (4.0 SE). The SE is below a third of the difference, so the relative effect is settled. The absolute effect goes the other way: control TLP is better than Zipf TLP by 0.085.
+  The 0.726 and 0.811 figures in the earlier version of this section, and in the summary, are under Zipf(1) queries.
+  - **Zipf queries.** The share that TLP keeps is higher with the Zipf pair by **0.105 ± 0.026** (4.0 SE). The SE is below a third of the difference, so the relative effect is settled. The absolute effect goes the other way: control TLP is better than Zipf TLP by 0.085.
+  - **Uniform queries.** The share is higher with the Zipf pair by 0.066 ± 0.032 (2.1 SE), which does not settle the relative effect. The absolute gap is larger: control TLP is better than Zipf TLP by 0.191, because the Zipf pair gives up the rare entries (6.3b).
 - The control is better in absolute accuracy at every loss level, because the Zipf pair has a ceiling of 0.80 (6.3b).
 
 Thus the brief's prediction holds, but only in its relative form. A sender that orders its slots by importance makes priority-aware loss handling worth more. But in this training budget, the ordering costs more accuracy than it saves.
+
+## 6.8 Bits under loss — `e8_bits_under_loss.png`, `results/e8_bits_under_loss.json`
+
+**Compressed text beats the latent link at every loss level, on bytes, on accuracy and on the final answer time. The latent link gives a first answer sooner.**
+
+The setup:
+- Latent: the exchange of 6.7. N = 8, d = 32, b = 16, TLP over UDP, P = 4 protected slots, keyed DATA.
+- Text: the serialised table of 6.1 (`k3=19 k7=42 …`), compressed with zstd level 19, sent as one keyed DATA packet with the TCP-like discipline. The packet is retransmitted until it is acknowledged (at most 50 times). B is the text-baseline model of 6.1, and it reads the decompressed text. The packet is a byte message (SPEC.md section 3).
+- Both: TLP over UDP on loopback, 20 ms one-way delay, identical seeded loss in both directions, 1000 value queries per cell, uniform queries, the same session handshake.
+- Bytes are counted in both directions on the wire for each message: TLP headers, AEAD tags, payloads, ACKs and retransmissions. The handshake is excluded.
+- Bytes to the first correct answer are the wire bytes from the start of the message to the first answer of B that is correct. A byte counts when it is sent, so the latent figure includes all 8 slots, because the sender sends them together. Messages that are never answered correctly are excluded from this mean, and the table gives their count.
+- The text table is 50.0 bytes on average, and 47.9 bytes after zstd. At level 3, zstd makes it larger (59.0 bytes), because a zstd frame has a fixed header.
+
+| Loss | Link | Accuracy ± SE | Bytes per message ± SE | Bytes to the first correct answer ± SE | Never correct | First answer ms ± SE | Final answer ms ± SE (p95) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0% | Latent | 0.999 ± 0.001 | 894 ± 0 | 894 ± 0 | 1 | 26.1 ± 0.1 | 33.6 ± 0.1 (37) |
+| 0% | Text, zstd | 1.000 ± 0.000 | 122 ± 0 | 122 ± 0 | 0 | 27.1 ± 0.1 | 27.1 ± 0.1 (31) |
+| 5% | Latent | 0.975 ± 0.005 | 955 ± 4 | 918 ± 3 | 24 | 26.3 ± 0.1 | 46.9 ± 0.7 (90) |
+| 5% | Text, zstd | 1.000 ± 0.000 | 134 ± 1 | 132 ± 1 | 0 | 33.2 ± 0.7 | 33.2 ± 0.7 (38) |
+| 10% | Latent | 0.947 ± 0.007 | 1026 ± 6 | 932 ± 4 | 53 | 30.5 ± 0.1 | 67.8 ± 1.1 (148) |
+| 10% | Text, zstd | 1.000 ± 0.000 | 145 ± 2 | 143 ± 2 | 0 | 45.3 ± 1.5 | 45.3 ± 1.5 (142) |
+| 20% | Latent | 0.883 ± 0.010 | 1173 ± 9 | 981 ± 6 | 116 | 28.1 ± 0.2 | 89.3 ± 1.3 (152) |
+| 20% | Text, zstd | 1.000 ± 0.000 | 181 ± 3 | 173 ± 3 | 0 | 60.7 ± 3.4 | 60.7 ± 3.4 (147) |
+| 30% | Latent | 0.808 ± 0.012 | 1316 ± 11 | 1006 ± 8 | 192 | 28.4 ± 0.2 | 110.1 ± 1.3 (155) |
+| 30% | Text, zstd | 1.000 ± 0.000 | 225 ± 5 | 217 ± 5 | 0 | 85.1 ± 4.9 | 85.1 ± 4.9 (289) |
+
+- **Bytes.** The latent link needs 894 to 1006 bytes on the wire to the first correct answer, and text needs 122 to 217 bytes: 4.6 to 7.3 times less. Total bytes divided by the number of correct answers: latent 895 at 0% loss and 1628 at 30%, text 122 and 225.
+- **Accuracy.** Text keeps 1.000 at every loss level, because its single packet is retransmitted until it arrives. The latent link falls to 0.808 at 30% loss, because TLP never retransmits the best-effort slots.
+- **Time.** The latent link gives its first answer at 26 to 31 ms at every loss level, because the first slot that arrives gives a partial answer. Text gives its only answer at 27 ms without loss and at 85 ms at 30% loss. The mean final answer is earlier for text at every loss level. At 30% loss, the p95 of text (289 ms) is later than the p95 of latent (155 ms), because a packet that is lost more than once waits for longer retransmit timeouts.
+- **Why.** One latent message is 8 packets of 64 payload bytes, each with a 28-byte header and a 16-byte tag. The whole text table fits in one packet of 48 payload bytes. A loss costs text one retransmit of a 92-byte packet, and the latent link loses an entry or retransmits a slot.
+
+Thus, on this task, a reliable single packet of compressed text is the better link under loss on every measure except the time to a first partial answer. The latent link's per-slot loss handling (6.7) helps only against a TCP-like latent link, not against compact text.
 
 ## 8. OpenTelepathy
 
@@ -281,9 +321,38 @@ The loop protects integrity only. The exfiltration in the demo (the whole table 
 
 Every score of a stochastic translator fit (the MLP families) is the mean ± SE over 5 seeded fits. A fit runs on one torch thread with a fixed seed, and one fit at a time in a process, so it is reproducible (`negotiate/translators.py`). The deterministic families (linear, Procrustes) need one fit. The held-out set has 32 anchors, so one anchor is 0.03 of a held-out score.
 
+The gate is 0.90: both held-out scores must be 0.90 or more (29 of 32 anchors) before data flows. The gate is a policy parameter (`TLPOptions.anchor_threshold`), not a measured threshold. No experiment derives 0.90 from data.
+
+### 10.0 Translation loss (the headline metric) — `results/n4_gate.json`
+
+**A shared nonlinear translator negotiates a working dialect at d = 32 with 256 anchors. At d = 16 it does not. Per-slot translators fail at every width.**
+
+Translation loss is the accuracy of the jointly trained pair minus the accuracy of the negotiated link, on the same queries. The negotiated link is a real A′ to B session over TLP over UDP, with the shared MLP translator from 256 fitting anchors, trust 1 and no loss. Each width has 5 translator fits, and each established session carries the same 200 value queries. The jointly trained pair (A to B, seed 0) answers those 200 queries with no translator and no network. The loss of each fit is a paired difference, so its SE is the SE of the negotiated accuracy over the 5 fits.
+
+| d | Negotiated link (mean ± SE, 5 fits) | Jointly trained pair | Translation loss (mean ± SE) | Pass at the gate 0.90 |
+| --- | --- | --- | --- | --- |
+| 32 | 0.995 ± 0.002 | 1.000 | 0.005 ± 0.002 | 5/5 |
+| 16 | 0.750 ± 0.010 | 0.935 | 0.185 ± 0.010 | 0/5 |
+
+- At d = 32, the negotiated link loses half a percentage point against its jointly trained ceiling, and every fit passes the gate.
+- At d = 16, the link answers 0.750 against 0.935, and no fit passes the gate. The highest held-out score of any d = 16 fit is 0.844. On the 1000-query set of 10.1, the d = 16 joint pair answers 0.924.
+- Without a translator, A′ forced through to B answers 0.020 of the same queries at both widths.
+- The d = 16 numbers come from the gate-0 run of 10.4, in which every fit gets through. The fits are deterministic, so pass or fail at 0.90 follows from their held-out scores.
+
+The per-slot families never come near a working link. This table uses the offline evaluation of 10.1: 256 fitting anchors, 1000 value queries, no network. The loss is against the joint pair on the same 1000 queries (0.999 at d = 32, 0.924 at d = 16). The held-out score is A′ to B.
+
+| Translator, 256 anchors | d = 32: accuracy / loss / held-out | d = 16: accuracy / loss / held-out | Pass at 0.90 |
+| --- | --- | --- | --- |
+| Linear, per slot | 0.042 / 0.957 / 0.09 | 0.022 / 0.902 / 0.00 | No, at both widths |
+| Procrustes, per slot | 0.014 / 0.985 / 0.00 | 0.007 / 0.917 / 0.03 | No, at both widths |
+| MLP, per slot | 0.307 ± 0.005 / 0.692 ± 0.005 / 0.23 ± 0.03 | 0.132 ± 0.002 / 0.792 ± 0.002 / 0.07 ± 0.01 | No, at both widths |
+| Shared MLP (one map for all slots) | 0.989 ± 0.001 / 0.010 ± 0.001 / 0.99 ± 0.01 | 0.755 ± 0.002 / 0.169 ± 0.002 / 0.74 ± 0.03 | Yes at d = 32, no at d = 16 |
+
+Sections 10.1 to 10.4 give the anchor sweep, the cost, the diagnosis and the gate measurements behind these tables.
+
 ### 10.1 Accuracy against fitting anchors — `n1_anchors.png`
 
-The test translates A′ messages into B's dialect and evaluates them on 1000 value queries. Each cell is eval accuracy / held-out score (threshold 0.9).
+The test translates A′ messages into B's dialect and evaluates them on 1000 value queries. Each cell is eval accuracy / held-out score (gate 0.90).
 
 | d = 32 | 16 | 32 | 64 | 128 | 256 |
 | --- | --- | --- | --- | --- | --- |
@@ -306,7 +375,7 @@ At d = 16, the ceiling is 0.924, the floor is 0.011, and the full-message linear
 **Negotiation works at d = 32 with the shared MLP, and fails at d = 16.**
 - At d = 32, the shared MLP passes the held-out check at 256 anchors in both directions (A′ to B 0.99 ± 0.01, B to A′ 0.97 ± 0.00). It is the protocol default.
 - **Change from the earlier result.** The first version of this file reported the best result as the per-slot MLP at 256 anchors: held-out 0.16 (one fit). Over 5 fits, that family gets 0.23 ± 0.03. The shared MLP gets 0.99 ± 0.01, with eval accuracy 0.989 ± 0.001 against a ceiling of 0.999.
-- At d = 16, no family reaches the 0.9 threshold within 256 anchors. The best is the shared MLP: 0.74 ± 0.03 held-out, against a ceiling of 0.92 for the jointly trained pair. Section 10.4 measures how much of that link works.
+- At d = 16, no family reaches the gate 0.90 within 256 anchors. The best is the shared MLP: 0.74 ± 0.03 held-out, against a ceiling of 0.92 for the jointly trained pair. Section 10.4 measures how much of that link works.
 - Every per-slot family and the full-message linear map fail at both values of d. Section 10.3 gives the reasons.
 
 **Probe on A′ messages.** The probe reads 49.9% of the intents of A′ messages untranslated. With a linear translator fitted on the witnessed anchors, it reads 33.9% (chance). With a shared MLP from 256 witnessed anchors, it reads 74.9%. The anchors are value tables only, so the translator never sees a count or existence message. This probably limits the probe on those intents. The probe records the dialect in which it read each message (`tlp.dialect.read_in`).
@@ -384,7 +453,7 @@ At d = 16, even 1024 anchors do not pass in either direction: B to A′ gets 0.8
 
 ### 10.4 How much of the d = 16 link works — `results/n4_gate.json`
 
-Real A′ to B handshakes over TLP over UDP, shared MLP, 256 fitting anchors, 5 translator seeds. Each established session then carries 200 value queries (trust 1, no loss). Both sides must reach the gate. The gate 0.80 run is a measurement, not a policy change: the protocol default stays at 0.9.
+Real A′ to B handshakes over TLP over UDP, shared MLP, 256 fitting anchors, 5 translator seeds. Each established session then carries 200 value queries (trust 1, no loss). Both sides must reach the gate. The gate 0.80 run is a measurement, not a policy change: the protocol default stays at 0.90 (a policy parameter, section 10).
 
 | d = 16, seed | Held-out, A′ to B | Held-out, B to A′ | Task accuracy (200 queries) |
 | --- | --- | --- | --- |
@@ -399,7 +468,7 @@ Real A′ to B handshakes over TLP over UDP, shared MLP, 256 fitting anchors, 5 
 
 - **With the gate at 0.80, 1/5 handshakes pass.** Only seed 0 has both scores at or above 0.80 (0.81 and 0.81). Its task accuracy is 0.78.
 - **Over all 5 fits, the link delivers 0.750 ± 0.010 task accuracy**, against 0.92 for the jointly trained d = 16 pair and 0.01 forced through without a translator. The held-out score tracks the task accuracy: about 0.75 for both.
-- **Reference, d = 32 at the default gate 0.9:** 5/5 handshakes pass, with held-out 0.994 ± 0.006 (A′ to B) and 0.969 ± 0.000 (B to A′), and task accuracy 0.995 ± 0.002.
+- **Reference, d = 32 at the default gate 0.90:** 5/5 handshakes pass, with held-out 0.994 ± 0.006 (A′ to B) and 0.969 ± 0.000 (B to A′), and task accuracy 0.995 ± 0.002.
 
 Thus at d = 16 about three quarters of the link works. A gate of 0.80 lets one fit in five through. A gate low enough to pass every fit would also pass a link that is wrong on a quarter of its answers.
 
@@ -422,4 +491,5 @@ More detail on the special runs:
 - **Intent mismatch.** B asked "count?" through ROUTE, and A1 sent the whole table under a count label. The probe flagged it: declared SHARE_ENTRY_COUNT, observed SHARE_VALUE, confidence 1.00. B's trust fell from 0.90 to 0.09 after the first slot, and the probe sent RESET. The trace spans B, the resolver (route and relay), A1 and the probe, with the `intent.mismatch` event.
 - **A′.** The log shows the dialect mismatch at HELLO, then NEGOTIATING, with 0 ANCHOR retransmits (the send window). The held-out scores are 1.000 (B) and 0.969 (A′), so the session goes on to KEYING, ESCROW and ESTABLISHED. B answers correctly. The probe fits its own translator after ESCROW_ACK, reads the message in B's dialect, and sends `VERDICT match=True` about 3.4 s after B's answer. B keeps the session open for the verdict (`await_verdict`, demo only).
 - **In-process transport.** `--transport inproc` gives the same results in one process.
-- **Raw IP protocol 253: not verified for the current code.** Before the AEAD and UDP changes, `sudo .venv/bin/pytest tests/test_raw.py` passed (2 tests) on this Mac, and `sudo .venv/bin/python scripts/demo.py` passed paths 1 and 2, the loss run and the mismatch run. In that run, A′ ended in RESET (linear translator), and the anchor exchange sent about 5,300 spurious retransmits in each direction (10,544 in total). The send window, the shared MLP and AEAD came after that run. Run the raw tests and `--transport raw` again as root to verify them.
+- **Raw IP protocol 253: verified on 2026-11-01 for the current code.** As root on this Mac, `sudo .venv/bin/pytest tests/test_raw.py` gave `2 passed in 0.04s`. `sudo .venv/bin/python scripts/demo.py --transport raw` completed all 7 sessions: paths 1 and 2, the loss run, the mismatch run and the negotiated A′ session. The trace of that run is `results/demo_trace.jsonl` (132 spans, local only, because `.gitignore` excludes `results/*.jsonl`). It has 7 `answer` spans, 7 `intent.check` spans and 2 `negotiate` spans. B's answers are the same as in the table above (78, 25, 35, 23, 34 and 87). The only span with status ERROR is the expected `intent.check` of the mismatch run (declared SHARE_ENTRY_COUNT, observed SHARE_VALUE), after which B's trust is 0.09. The A′ negotiation used `shared_mlp` with 256 anchors, with held-out scores of 1.000 (B) and 0.969 (A′).
+- **The earlier raw run, for reference.** Before the AEAD and UDP changes, the raw demo ended A′ in RESET (linear translator), and the anchor exchange sent about 5,300 spurious retransmits in each direction. The send window, the shared MLP and AEAD came after that run.

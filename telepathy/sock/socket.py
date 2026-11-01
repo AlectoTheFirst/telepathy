@@ -321,6 +321,13 @@ class Connection:
             m.bytes += pkt.wire_len()
             if i in m.vecs or m.final:
                 m.duplicates += 1
+            elif is_data and pkt.slot_dim == 0:   # opaque byte message (send_bytes)
+                m.vecs[i] = bytes(plain)
+                m.order.append(i)
+                if pkt.flags & Flag.PROTECTED:
+                    m.prot_max = max(m.prot_max, i)
+                else:
+                    m.be_min = min(m.be_min, i)
             else:
                 bits = s.bits if is_data else 16
                 x = decode_slot(plain, pkt.slot_dim, bits)
@@ -443,6 +450,45 @@ class Connection:
         else:
             P, retx = (n // 2 if protected is None else protected), None
         return self.send_slots(M.DATA, x, P, intent, self.session.bits, keyed=True, max_retx=retx)
+
+    def send_bytes(self, payload: bytes, intent: int = INTENT_SHARE_VALUE) -> int:
+        """Send one opaque byte message (a baseline such as compressed text) as a single keyed DATA
+        packet with slot_dim = 0. The session's reliability applies: "tcp" retransmits it up to
+        tcp_max_retx times, "tlp" treats it as one protected slot, "udp" sends it once."""
+        if not self.fsm.established:
+            raise ConnectionReset(f"not established ({self.fsm.state.value})")
+        rel = self.opts.reliability
+        P, retx = (0, 0) if rel == "udp" else (1, self.opts.tcp_max_retx if rel == "tcp" else None)
+        mid = next(self.msg_ids) & 0xFFFF
+        keyed = self.session.aead is not None
+        flags = (Flag.PROTECTED if P else 0) | Flag.LAST_SLOT | (Flag.KEYED if keyed else 0)
+        pkts = [dict(msg_type=M.DATA, payload=bytes(payload), flags=flags, intent=intent, msg_id=mid,
+                     slot_index=0, slot_count=1, prio=0, slot_dim=0)]
+        o = _Out(M.DATA, mid, 1, P, pkts, max_retx=self.opts.max_retx if retx is None else retx)
+        with self.lock:
+            self.out[(int(M.DATA), mid)] = o
+        self._send(**pkts[0])
+        if P:
+            o.timer = self.sock.timers.call_later(self.opts.rto, lambda: self._rto(o))
+        else:
+            o.done.set()
+        return mid
+
+    def recv_bytes(self, timeout: float = 10.0) -> bytes | None:
+        """Wait for one byte message (send_bytes) to be final. Returns its payload, or None if
+        the packet never arrived before the message was finalised."""
+        try:
+            key = self.data_q.get(timeout=timeout)
+        except queue.Empty:
+            if self.fsm.state == State.CLOSED:
+                raise ConnectionReset(self.reset_reason or "closed")
+            raise TimeoutError("no byte message")
+        m: _In = self.inc[key]
+        with self.cv:
+            while 0 not in m.vecs and self.fsm.state != State.CLOSED:
+                self.cv.wait(HEARTBEAT)
+            v = m.vecs.get(0)
+        return v if isinstance(v, bytes) else None
 
     def recv_latent(self, deadline: float = 0.2, timeout: float = 10.0):
         """Generator over one latent message: yields (slots [N,d], mask [N], final) after every
@@ -1018,6 +1064,12 @@ class TLPSocket:
 
     def recv_latent(self, *a, **kw):
         return self.conn.recv_latent(*a, **kw)
+
+    def send_bytes(self, *a, **kw):
+        return self.conn.send_bytes(*a, **kw)
+
+    def recv_bytes(self, *a, **kw):
+        return self.conn.recv_bytes(*a, **kw)
 
     @property
     def session(self) -> Session:

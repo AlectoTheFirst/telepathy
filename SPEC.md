@@ -90,6 +90,8 @@ The session negotiates b in HELLO. The session uses the smaller of the two propo
 
 Bit budgets in RESULTS.md count the payload bytes in this table × 8, including the per-slot scale. Headers and the AEAD tag are excluded, as for the text and codec baselines.
 
+**Byte message (baselines only).** A DATA packet with slot_dim = 0 carries opaque bytes in place of a slot: slot_index 0, slot_count 1, LAST_SLOT set, and KEYED as for any DATA. The session's reliability applies to it as to one slot. The receiver does not decode it, the translator does not touch it, and the intent probe does not classify it. Experiment 6.8 uses it to send the zstd-compressed text baseline (`Connection.send_bytes` and `recv_bytes`).
+
 ## 4. Message types and payloads
 
 Control payloads are compact JSON (UTF-8, sorted keys). Latent and key payloads are binary.
@@ -151,7 +153,7 @@ The peers negotiate the channel in this order: shared mathematics in the open fi
 2. **ANCHOR / ANCHOR_RESULT (same dialect id).** Both sides hold the same public anchor set: tables with a known query and answer (`telepathy/data.py`, held-out seed 1002, 32 tables).
    - Each side encodes the held-out anchors with its own send port and sends them in the clear, all PROTECTED.
    - Each side reads the peer's anchors through its own receive port (trust 1) and scores the answers.
-   - Each side sends ANCHOR_RESULT. Data flows only if both scores reach the threshold (default 0.9, that is 29 of 32). The score is an input to the effective trust.
+   - Each side sends ANCHOR_RESULT. Data flows only if both scores reach the gate (default 0.90, that is 29 of 32). The gate is a policy parameter (`TLPOptions.anchor_threshold`), not a measured threshold. The score is an input to the effective trust.
 3. **KEY / KEY_CONFIRM.** The peers do an X25519 ephemeral key exchange.
    - transcript = SHA-256(HELLO payload ‖ HELLO_ACK payload ‖ initiator pub ‖ responder pub), with length prefixes.
    - HKDF-SHA256(shared secret, salt = transcript, info = "telepathy-0 key schedule") gives 68 bytes: the data key (32), the confirm key (32) and the nonce salt (4).
@@ -167,7 +169,7 @@ The peers negotiate the channel in this order: shared mathematics in the open fi
    - Shared across slots: the same three families, fitted on the pooled pairs of all N slots. The shared MLP has 256 hidden units and 1500 full-batch steps.
    - The default family is `shared_mlp`. It is the only family that passes the held-out check (RESULTS.md 10.3). It assumes that one map serves every slot, so it cannot fit two dialects that differ by a separate map per slot.
 3. Each side translates the peer's held-out latents, reads them through its own receive port, and scores them.
-4. Each side sends NEGOTIATE with its family and held-out score. Data flows only if both scores reach the threshold. Otherwise either side sends RESET. The held-out score is an input to the effective trust.
+4. Each side sends NEGOTIATE with its family and held-out score. Data flows only if both scores reach the same gate (default 0.90). Otherwise either side sends RESET. The held-out score is an input to the effective trust.
 
 For each slot, the receiver does these steps in this order: decrypt and authenticate the packet (AEAD), dequantize, apply the translator, then pass the slot to the receive port. A packet that fails authentication is dropped and counted.
 

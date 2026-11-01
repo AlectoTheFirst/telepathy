@@ -212,6 +212,8 @@ class ProbeService:
         if sess is not None:
             if dst != sess["receiver"]:
                 return
+            if pkt.slot_dim == 0:   # opaque byte message (send_bytes), not a latent: nothing to classify
+                return
             key = (sid, pkt.msg_id)
             with self.lock:
                 m = self.msgs.get(key)

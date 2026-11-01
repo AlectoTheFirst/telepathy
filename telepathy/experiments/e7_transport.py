@@ -87,7 +87,8 @@ def run_cell(rel: str, loss: float, n_msgs: int, ev, slots_all, B, seed: int, ck
 def main(n_msgs: int = 100):
     sweep(DEFAULT, "e7_transport", n_msgs)
     zipf_sweeps(n_msgs)
-    zipf_cell()
+    zipf_cell(queries="zipf")
+    zipf_cell(queries="uniform")
 
 
 def zipf_sweeps(n_msgs: int = 100):
@@ -97,13 +98,18 @@ def zipf_sweeps(n_msgs: int = 100):
     sweep(DEFAULT, "e7_transport_zipf_control", n_msgs, eval_td=tdz)
 
 
-def zipf_cell(n_msgs: int = 1000, loss: float = 0.30, n_boot: int = 2000):
-    """The 30% loss cell on Zipf queries, with more messages: TLP and TCP-like for the Zipf pair and
-    for the uniform-trained control. Reports accuracy +- SE, the share of TCP-like accuracy that TLP
-    keeps, and the difference of the shares between the two pairs (bootstrap SE over messages)."""
-    _, _, tdz = models(ZIPF)
-    ev = tdz.eval_set(n_msgs)
-    out = {"loss": loss, "n_msgs": n_msgs, "cells": {}}
+def zipf_cell(n_msgs: int = 1000, loss: float = 0.30, n_boot: int = 2000, queries: str = "zipf"):
+    """The 30% loss cell with more messages: TLP and TCP-like for the Zipf pair and for the
+    uniform-trained control. queries = "zipf" evaluates on Zipf(1) value queries
+    (results/e7_zipf_cell.json); "uniform" on uniform value queries (results/e7_zipf_cell_uniform.json).
+    Reports accuracy +- SE, the share of TCP-like accuracy that TLP keeps, and the difference of the
+    shares between the two pairs (bootstrap SE over messages)."""
+    if queries == "zipf":
+        _, _, td_q = models(ZIPF)
+    else:
+        _, _, td_q = models(DEFAULT)
+    ev = td_q.eval_set(n_msgs)
+    out = {"loss": loss, "n_msgs": n_msgs, "queries": queries, "query_zipf": td_q.task.query_zipf, "cells": {}}
     raw = {}
     for name, ckpt in (("zipf_pair", ZIPF), ("control", DEFAULT)):
         m, _, _ = models(ckpt)
@@ -135,7 +141,7 @@ def zipf_cell(n_msgs: int = 1000, loss: float = 0.30, n_boot: int = 2000):
     d = out["tlp_share_of_tcp"]["diff"]
     out["diff_over_se"] = d["value"] / d["se"] if d["se"] else None
     print(f"share zipf {est['zipf_pair']:.3f}, control {est['control']:.3f}, diff {d['value']:.3f} +- {d['se']:.3f}")
-    save("e7_zipf_cell", out)
+    save("e7_zipf_cell" if queries == "zipf" else "e7_zipf_cell_uniform", out)
     return out
 
 
