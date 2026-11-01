@@ -1,0 +1,81 @@
+{
+ "N": 8,
+ "d": 32,
+ "K": 8,
+ "rows": [
+  {
+   "link": "no link",
+   "acc": 0.013,
+   "payload_bytes": 0,
+   "wire_bytes": 0,
+   "packets": 0,
+   "header_bytes": 0,
+   "tag_bytes": 0
+  },
+  {
+   "link": "latent b=16",
+   "acc": 1.0,
+   "payload_bytes": 512,
+   "wire_bytes": 864,
+   "packets": 8,
+   "header_bytes": 224,
+   "tag_bytes": 128
+  },
+  {
+   "link": "text @ 512 B",
+   "acc": 1.0,
+   "payload_bytes": 55,
+   "wire_bytes": 99,
+   "packets": 1,
+   "header_bytes": 28,
+   "tag_bytes": 16
+  },
+  {
+   "link": "latent b=4",
+   "acc": 1.0,
+   "payload_bytes": 144,
+   "wire_bytes": 496,
+   "packets": 8,
+   "header_bytes": 224,
+   "tag_bytes": 128
+  },
+  {
+   "link": "text @ 144 B",
+   "acc": 1.0,
+   "payload_bytes": 55,
+   "wire_bytes": 99,
+   "packets": 1,
+   "header_bytes": 28,
+   "tag_bytes": 16
+  },
+  {
+   "link": "codec @ 8 B",
+   "acc": 0.637660026550293,
+   "payload_bytes": 8,
+   "wire_bytes": 52,
+   "packets": 1,
+   "header_bytes": 28,
+   "tag_bytes": 16
+  },
+  {
+   "link": "codec @ 11 B",
+   "acc": 1.0,
+   "payload_bytes": 11,
+   "wire_bytes": 55,
+   "packets": 1,
+   "header_bytes": 28,
+   "tag_bytes": 16
+  },
+  {
+   "link": "text unbounded",
+   "acc": 1.0,
+   "payload_bytes": 50,
+   "wire_bytes": 94,
+   "packets": 1,
+   "header_bytes": 28,
+   "tag_bytes": 16
+  }
+ ],
+ "mean_text_bytes": 50,
+ "note": "text at equal bytes = serialised table truncated to the latent payload bytes; the full table is ~6.9 B/entry, so at these budgets text carries the whole table"
+}

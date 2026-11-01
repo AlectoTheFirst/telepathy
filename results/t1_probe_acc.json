@@ -1,0 +1,66 @@
+{
+ "per_class": {
+  "SHARE_VALUE": 1.0,
+  "SHARE_KEY_EXISTENCE": 1.0,
+  "SHARE_ENTRY_COUNT": 1.0
+ },
+ "per_prefix": [
+  {
+   "slots": 1,
+   "acc": 0.999666690826416,
+   "SHARE_VALUE": 1.0,
+   "SHARE_KEY_EXISTENCE": 1.0,
+   "SHARE_ENTRY_COUNT": 0.9990300536155701
+  },
+  {
+   "slots": 2,
+   "acc": 1.0,
+   "SHARE_VALUE": 1.0,
+   "SHARE_KEY_EXISTENCE": 1.0,
+   "SHARE_ENTRY_COUNT": 1.0
+  },
+  {
+   "slots": 3,
+   "acc": 1.0,
+   "SHARE_VALUE": 1.0,
+   "SHARE_KEY_EXISTENCE": 1.0,
+   "SHARE_ENTRY_COUNT": 1.0
+  },
+  {
+   "slots": 4,
+   "acc": 1.0,
+   "SHARE_VALUE": 1.0,
+   "SHARE_KEY_EXISTENCE": 1.0,
+   "SHARE_ENTRY_COUNT": 1.0
+  },
+  {
+   "slots": 5,
+   "acc": 1.0,
+   "SHARE_VALUE": 1.0,
+   "SHARE_KEY_EXISTENCE": 1.0,
+   "SHARE_ENTRY_COUNT": 1.0
+  },
+  {
+   "slots": 6,
+   "acc": 1.0,
+   "SHARE_VALUE": 1.0,
+   "SHARE_KEY_EXISTENCE": 1.0,
+   "SHARE_ENTRY_COUNT": 1.0
+  },
+  {
+   "slots": 7,
+   "acc": 1.0,
+   "SHARE_VALUE": 1.0,
+   "SHARE_KEY_EXISTENCE": 1.0,
+   "SHARE_ENTRY_COUNT": 1.0
+  },
+  {
+   "slots": 8,
+   "acc": 1.0,
+   "SHARE_VALUE": 1.0,
+   "SHARE_KEY_EXISTENCE": 1.0,
+   "SHARE_ENTRY_COUNT": 1.0
+  }
+ ],
+ "n": 3000
+}

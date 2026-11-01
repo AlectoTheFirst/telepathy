@@ -1,0 +1,6 @@
+{
+ "with_key": 1.0,
+ "without_key": 0.33799999952316284,
+ "chance": 0.3333333333333333,
+ "cipher": "AES-256-GCM per DATA packet"
+}

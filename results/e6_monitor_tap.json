@@ -1,0 +1,12 @@
+{
+ "probe_entry_acc": {
+  "with_key": 1.0,
+  "without_key_ciphertext": 0.0005624999757856131,
+  "decrypt_matches_plaintext": true
+ },
+ "chance": 0.000625,
+ "n_train": 20000,
+ "n_test": 2000,
+ "metric": "fraction of table entries whose key and value the tap probe recovers",
+ "cipher": "AES-256-GCM per DATA packet, fresh key per message (session)"
+}

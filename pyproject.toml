@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telepathy"
+version = "0.0.1"
+description = "Telepathy-0: model-to-model latent communication over TLP (TLP over UDP, or IP protocol 253)"
+requires-python = ">=3.11"
+dependencies = [
+  "torch>=2.4",
+  "numpy",
+  "cryptography>=42",
+  "opentelemetry-api",
+  "opentelemetry-sdk",
+  "opentelemetry-exporter-otlp-proto-http",
+  "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["telepathy*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

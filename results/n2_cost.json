@@ -1,0 +1,48 @@
+{
+ "same_dialect": {
+  "handshake_bytes": 49716,
+  "handshake_ms": 40.82375002326444
+ },
+ "rows": [
+  {
+   "anchors": 16,
+   "handshake_bytes": 74278,
+   "negotiate_bytes": 73688,
+   "negotiate_ms": 1013.8612079899758,
+   "handshake_ms": 1015.1322919991799,
+   "heldout_score": 0.03125
+  },
+  {
+   "anchors": 32,
+   "handshake_bytes": 98786,
+   "negotiate_bytes": 98196,
+   "negotiate_ms": 770.444082969334,
+   "handshake_ms": 1463.6060419725254,
+   "heldout_score": 0.25
+  },
+  {
+   "anchors": 64,
+   "handshake_bytes": 147808,
+   "negotiate_bytes": 147218,
+   "negotiate_ms": 2435.964167001657,
+   "handshake_ms": 2437.278083001729,
+   "heldout_score": 0.625
+  },
+  {
+   "anchors": 128,
+   "handshake_bytes": 245866,
+   "negotiate_bytes": 245274,
+   "negotiate_ms": 2255.449125019368,
+   "handshake_ms": 4328.376249992289,
+   "heldout_score": 0.84375
+  },
+  {
+   "anchors": 256,
+   "handshake_bytes": 441958,
+   "negotiate_bytes": 441366,
+   "negotiate_ms": 8314.30804199772,
+   "handshake_ms": 8315.471999987494,
+   "heldout_score": 1.0
+  }
+ ]
+}

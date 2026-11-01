@@ -1,0 +1,200 @@
+{
+ "seeds": 5,
+ "settings": [
+  {
+   "d": 16,
+   "gate": 0.8,
+   "established": "1/5",
+   "runs": [
+    {
+     "d": 16,
+     "gate": 0.8,
+     "seed": 0,
+     "established": true,
+     "heldout_a_prime_to_b": 0.8125,
+     "heldout_b_to_a_prime": 0.8125,
+     "task_acc": 0.78,
+     "n_msgs": 200
+    },
+    {
+     "d": 16,
+     "gate": 0.8,
+     "seed": 1,
+     "established": false,
+     "error": "negotiation failed (local 0.750, peer 0.781)"
+    },
+    {
+     "d": 16,
+     "gate": 0.8,
+     "seed": 2,
+     "established": false,
+     "error": "negotiation failed (local 0.688, peer 0.844)"
+    },
+    {
+     "d": 16,
+     "gate": 0.8,
+     "seed": 3,
+     "established": false,
+     "error": "negotiation failed (local 0.656, peer 0.719)"
+    },
+    {
+     "d": 16,
+     "gate": 0.8,
+     "seed": 4,
+     "established": false,
+     "error": "negotiation failed (local 0.812, peer 0.656)"
+    }
+   ],
+   "heldout_a_prime_to_b": {
+    "mean": 0.8125,
+    "se": 0.0
+   },
+   "heldout_b_to_a_prime": {
+    "mean": 0.8125,
+    "se": 0.0
+   },
+   "task_acc": {
+    "mean": 0.78,
+    "se": 0.0
+   }
+  },
+  {
+   "d": 16,
+   "gate": 0.0,
+   "established": "5/5",
+   "runs": [
+    {
+     "d": 16,
+     "gate": 0.0,
+     "seed": 0,
+     "established": true,
+     "heldout_a_prime_to_b": 0.8125,
+     "heldout_b_to_a_prime": 0.8125,
+     "task_acc": 0.78,
+     "n_msgs": 200
+    },
+    {
+     "d": 16,
+     "gate": 0.0,
+     "seed": 1,
+     "established": true,
+     "heldout_a_prime_to_b": 0.75,
+     "heldout_b_to_a_prime": 0.78125,
+     "task_acc": 0.745,
+     "n_msgs": 200
+    },
+    {
+     "d": 16,
+     "gate": 0.0,
+     "seed": 2,
+     "established": true,
+     "heldout_a_prime_to_b": 0.6875,
+     "heldout_b_to_a_prime": 0.84375,
+     "task_acc": 0.745,
+     "n_msgs": 200
+    },
+    {
+     "d": 16,
+     "gate": 0.0,
+     "seed": 3,
+     "established": true,
+     "heldout_a_prime_to_b": 0.65625,
+     "heldout_b_to_a_prime": 0.71875,
+     "task_acc": 0.72,
+     "n_msgs": 200
+    },
+    {
+     "d": 16,
+     "gate": 0.0,
+     "seed": 4,
+     "established": true,
+     "heldout_a_prime_to_b": 0.8125,
+     "heldout_b_to_a_prime": 0.65625,
+     "task_acc": 0.76,
+     "n_msgs": 200
+    }
+   ],
+   "heldout_a_prime_to_b": {
+    "mean": 0.74375,
+    "se": 0.03186887195995491
+   },
+   "heldout_b_to_a_prime": {
+    "mean": 0.7625,
+    "se": 0.03365728004459065
+   },
+   "task_acc": {
+    "mean": 0.75,
+    "se": 0.009874208829065758
+   }
+  },
+  {
+   "d": 32,
+   "gate": 0.9,
+   "established": "5/5",
+   "runs": [
+    {
+     "d": 32,
+     "gate": 0.9,
+     "seed": 0,
+     "established": true,
+     "heldout_a_prime_to_b": 1.0,
+     "heldout_b_to_a_prime": 0.96875,
+     "task_acc": 1.0,
+     "n_msgs": 200
+    },
+    {
+     "d": 32,
+     "gate": 0.9,
+     "seed": 1,
+     "established": true,
+     "heldout_a_prime_to_b": 1.0,
+     "heldout_b_to_a_prime": 0.96875,
+     "task_acc": 0.99,
+     "n_msgs": 200
+    },
+    {
+     "d": 32,
+     "gate": 0.9,
+     "seed": 2,
+     "established": true,
+     "heldout_a_prime_to_b": 0.96875,
+     "heldout_b_to_a_prime": 0.96875,
+     "task_acc": 1.0,
+     "n_msgs": 200
+    },
+    {
+     "d": 32,
+     "gate": 0.9,
+     "seed": 3,
+     "established": true,
+     "heldout_a_prime_to_b": 1.0,
+     "heldout_b_to_a_prime": 0.96875,
+     "task_acc": 0.99,
+     "n_msgs": 200
+    },
+    {
+     "d": 32,
+     "gate": 0.9,
+     "seed": 4,
+     "established": true,
+     "heldout_a_prime_to_b": 1.0,
+     "heldout_b_to_a_prime": 0.96875,
+     "task_acc": 0.995,
+     "n_msgs": 200
+    }
+   ],
+   "heldout_a_prime_to_b": {
+    "mean": 0.99375,
+    "se": 0.0062499999999999995
+   },
+   "heldout_b_to_a_prime": {
+    "mean": 0.96875,
+    "se": 0.0
+   },
+   "task_acc": {
+    "mean": 0.9950000000000001,
+    "se": 0.0022360679774997916
+   }
+  }
+ ]
+}

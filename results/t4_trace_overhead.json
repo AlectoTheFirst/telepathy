@@ -1,0 +1,19 @@
+{
+ "off": {
+  "bytes": 864.0,
+  "lat_ms": 0.8577210284420289,
+  "p95_ms": 1.2434708012733608
+ },
+ "on": {
+  "bytes": 1088.0,
+  "lat_ms": 0.8279526742990129,
+  "p95_ms": 0.9831791248871011
+ },
+ "bytes_overhead_pct": 25.925925925925927,
+ "small_slot_example": {
+  "d=4 slot payload (B)": 8,
+  "EXT_TRACE (B)": 28,
+  "d=4 message off (B)": 416,
+  "d=4 message on (B)": 640
+ }
+}

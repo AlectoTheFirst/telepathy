@@ -1,0 +1,254 @@
+{
+ "checkpoint": "latent_d32_s0",
+ "transport": "udp",
+ "labels": {
+  "udp": "datagrams, no TLP recovery",
+  "tcp": "TCP-like (reliable, in order)",
+  "tlp": "TLP over UDP"
+ },
+ "query_zipf": 1.0,
+ "delay_ms": 20.0,
+ "loss": [
+  0.0,
+  0.01,
+  0.02,
+  0.05,
+  0.1,
+  0.2,
+  0.3
+ ],
+ "rows": [
+  {
+   "transport": "udp",
+   "loss": 0.0,
+   "acc": 1.0,
+   "t_first_ms": 29.644541708985344,
+   "t_final_ms": 42.44834667129908,
+   "t_final_p95_ms": 52.258983362116844,
+   "bytes": 892.92,
+   "retransmits": 0.0,
+   "n": 100
+  },
+  {
+   "transport": "tcp",
+   "loss": 0.0,
+   "acc": 1.0,
+   "t_first_ms": 29.052344149095006,
+   "t_final_ms": 41.75814040994737,
+   "t_final_p95_ms": 48.29084406665061,
+   "bytes": 885.36,
+   "retransmits": 0.0,
+   "n": 100
+  },
+  {
+   "transport": "tlp",
+   "loss": 0.0,
+   "acc": 1.0,
+   "t_first_ms": 30.304885422228836,
+   "t_final_ms": 42.265011267736554,
+   "t_final_p95_ms": 54.56913779780734,
+   "bytes": 885.36,
+   "retransmits": 0.0,
+   "n": 100
+  },
+  {
+   "transport": "udp",
+   "loss": 0.01,
+   "acc": 0.98,
+   "t_first_ms": 32.84910461108666,
+   "t_final_ms": 45.728551219799556,
+   "t_final_p95_ms": 66.13114133360796,
+   "bytes": 892.92,
+   "retransmits": 0.0,
+   "n": 100
+  },
+  {
+   "transport": "tcp",
+   "loss": 0.01,
+   "acc": 1.0,
+   "t_first_ms": 26.796824574121274,
+   "t_final_ms": 39.10912538995035,
+   "t_final_p95_ms": 72.01846843236125,
+   "bytes": 907.44,
+   "retransmits": 0.16,
+   "n": 100
+  },
+  {
+   "transport": "tlp",
+   "loss": 0.01,
+   "acc": 0.99,
+   "t_first_ms": 26.091077497112565,
+   "t_final_ms": 36.98703584901523,
+   "t_final_p95_ms": 62.01804023003202,
+   "bytes": 897.06,
+   "retransmits": 0.03,
+   "n": 100
+  },
+  {
+   "transport": "udp",
+   "loss": 0.02,
+   "acc": 0.98,
+   "t_first_ms": 25.807669213972986,
+   "t_final_ms": 35.92728457180783,
+   "t_final_p95_ms": 39.536712496192145,
+   "bytes": 892.92,
+   "retransmits": 0.0,
+   "n": 100
+  },
+  {
+   "transport": "tcp",
+   "loss": 0.02,
+   "acc": 1.0,
+   "t_first_ms": 25.97552375867963,
+   "t_final_ms": 42.6835958607262,
+   "t_final_p95_ms": 77.1896954771364,
+   "bytes": 933.66,
+   "retransmits": 0.35,
+   "n": 100
+  },
+  {
+   "transport": "tlp",
+   "loss": 0.02,
+   "acc": 1.0,
+   "t_first_ms": 26.246999111026525,
+   "t_final_ms": 40.22049830004107,
+   "t_final_p95_ms": 74.4765937095508,
+   "bytes": 902.58,
+   "retransmits": 0.07,
+   "n": 100
+  },
+  {
+   "transport": "udp",
+   "loss": 0.05,
+   "acc": 0.95,
+   "t_first_ms": 26.928269529598765,
+   "t_final_ms": 39.898467849125154,
+   "t_final_p95_ms": 64.12651012360577,
+   "bytes": 885.36,
+   "retransmits": 0.0,
+   "n": 100
+  },
+  {
+   "transport": "tcp",
+   "loss": 0.05,
+   "acc": 1.0,
+   "t_first_ms": 28.358766275341623,
+   "t_final_ms": 50.44816083740443,
+   "t_final_p95_ms": 86.28517087781802,
+   "bytes": 966.84,
+   "retransmits": 0.54,
+   "n": 100
+  },
+  {
+   "transport": "tlp",
+   "loss": 0.05,
+   "acc": 0.97,
+   "t_first_ms": 27.30648424127139,
+   "t_final_ms": 51.85409045137931,
+   "t_final_p95_ms": 98.13971637049687,
+   "bytes": 977.58,
+   "retransmits": 0.62,
+   "n": 100
+  },
+  {
+   "transport": "udp",
+   "loss": 0.1,
+   "acc": 0.88,
+   "t_first_ms": 27.146860008942895,
+   "t_final_ms": 43.416443719761446,
+   "t_final_p95_ms": 91.49148127180524,
+   "bytes": 892.92,
+   "retransmits": 0.0,
+   "n": 100
+  },
+  {
+   "transport": "tcp",
+   "loss": 0.1,
+   "acc": 1.0,
+   "t_first_ms": 27.98825459263753,
+   "t_final_ms": 80.28696046152618,
+   "t_final_p95_ms": 194.54167950025283,
+   "bytes": 1409.34,
+   "retransmits": 3.84,
+   "n": 100
+  },
+  {
+   "transport": "tlp",
+   "loss": 0.1,
+   "acc": 0.91,
+   "t_first_ms": 29.099124138010666,
+   "t_final_ms": 65.90107746131252,
+   "t_final_p95_ms": 149.80176285025664,
+   "bytes": 1035.42,
+   "retransmits": 1.12,
+   "n": 100
+  },
+  {
+   "transport": "udp",
+   "loss": 0.2,
+   "acc": 0.79,
+   "t_first_ms": 29.173552466672845,
+   "t_final_ms": 53.66952247801237,
+   "t_final_p95_ms": 96.94936186424455,
+   "bytes": 891.84,
+   "retransmits": 0.0,
+   "n": 100
+  },
+  {
+   "transport": "tcp",
+   "loss": 0.2,
+   "acc": 1.0,
+   "t_first_ms": 28.09221831150353,
+   "t_final_ms": 117.61705165961757,
+   "t_final_p95_ms": 241.3285500195343,
+   "bytes": 1758.84,
+   "retransmits": 6.59,
+   "n": 100
+  },
+  {
+   "transport": "tlp",
+   "loss": 0.2,
+   "acc": 0.9,
+   "t_first_ms": 28.528314930736087,
+   "t_final_ms": 89.80235380120575,
+   "t_final_p95_ms": 153.70593085535802,
+   "bytes": 1189.02,
+   "retransmits": 2.25,
+   "n": 100
+  },
+  {
+   "transport": "udp",
+   "loss": 0.3,
+   "acc": 0.68,
+   "t_first_ms": 28.893188747460954,
+   "t_final_ms": 62.16937205812428,
+   "t_final_p95_ms": 126.42585894791408,
+   "bytes": 885.36,
+   "retransmits": 0.0,
+   "n": 100
+  },
+  {
+   "transport": "tcp",
+   "loss": 0.3,
+   "acc": 1.0,
+   "t_first_ms": 28.401128739933483,
+   "t_final_ms": 164.4974016805645,
+   "t_final_p95_ms": 407.70148364827037,
+   "bytes": 1914.48,
+   "retransmits": 7.92,
+   "n": 100
+  },
+  {
+   "transport": "tlp",
+   "loss": 0.3,
+   "acc": 0.77,
+   "t_first_ms": 28.958933745743707,
+   "t_final_ms": 106.54031041834969,
+   "t_final_p95_ms": 155.13828926486894,
+   "bytes": 1286.22,
+   "retransmits": 3.05,
+   "n": 100
+  }
+ ],
+ "note": "udp = plain datagrams without TLP recovery, tcp = reliable in-order discipline; both are delivery disciplines over the same TLP packets, not kernel stacks"
+}
