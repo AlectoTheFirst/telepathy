@@ -62,8 +62,9 @@ telepathy/
   negotiate/   anchor codec and translator families (per slot, shared across slots, full message)
   otel/        tracer setup, JSONL exporter, span helpers, intent probe
   experiments/ one script for each experiment in sections 6 (e1 to e8), 8 and 10, plus n3_diagnostics (10.3) and n4_gate (10.4)
-docs/          telepathy1_gate_test.md (a specification for later, not run)
-scripts/       train.py demo.py probe.py run_experiments.py
+docs/          telepathy1_gate_test.md (the Telepathy-1 model gate test; results in results/gate_test.md)
+data/gate/     the gate-test passages and questions (fixed seed)
+scripts/       train.py demo.py probe.py run_experiments.py gate_test.py (needs `pip install -e '.[gate]'`)
 tests/
 ```
 

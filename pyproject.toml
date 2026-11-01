@@ -19,6 +19,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# Telepathy-1 model gate test (scripts/gate_test.py); tested with these versions
+gate = ["transformers>=5.22.1", "huggingface_hub>=2.4.0", "safetensors>=0.8.0", "accelerate>=1.15.0"]
 
 [tool.setuptools.packages.find]
 include = ["telepathy*"]

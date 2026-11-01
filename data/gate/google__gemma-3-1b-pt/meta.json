@@ -1,0 +1,28 @@
+{
+  "seed": 1234,
+  "n": 200,
+  "shots": [
+    {
+      "passage": "Orlena Vasquith was born in Dremholt in 1921. She trained as a surveyor and later moved to Kelvaran, where she ran a small mapping office.",
+      "question": "In which city did Orlena Vasquith run a mapping office?",
+      "answer": "Kelvaran"
+    },
+    {
+      "passage": "The engineer Tavik Morrow designed 34 footbridges along the Ulsa river. His closest collaborator was Hesper Quill, who handled the stonework.",
+      "question": "How many footbridges did Tavik Morrow design?",
+      "answer": "34"
+    },
+    {
+      "passage": "Bryn Altamire composed music for village festivals. In 1958 she won the Corvane Prize, and she later taught harmony to Ilse Varnet.",
+      "question": "Who did Bryn Altamire teach harmony to?",
+      "answer": "Ilse Varnet"
+    }
+  ],
+  "header": "Answer each question with a short answer taken from the passage.\n\n",
+  "sized_in": "tokens of google/gemma-3-1b-pt",
+  "token_range": [
+    300,
+    500
+  ],
+  "example_prompt_full": "Answer each question with a short answer taken from the passage.\n\nPassage: Orlena Vasquith was born in Dremholt in 1921. She trained as a surveyor and later moved to Kelvaran, where she ran a small mapping office.\nQuestion: In which city did Orlena Vasquith run a mapping office?\nAnswer: Kelvaran\n\nPassage: The engineer Tavik Morrow designed 34 footbridges along the Ulsa river. His closest collaborator was Hesper Quill, who handled the stonework.\nQuestion: How many footbridges did Tavik Morrow design?\nAnswer: 34\n\nPassage: Bryn Altamire composed music for village festivals. In 1958 she won the Corvane Prize, and she later taught harmony to Ilse Varnet.\nQuestion: Who did Bryn Altamire teach harmony to?\nAnswer: Ilse Varnet\n\nPassage: Drawy Draerba was born in the town of Trymthounmere, on the banks of the Mevzind river. The birth registry of the district records the year as 1911. Drawy grew up alongside a younger sibling named Kluyith, who later became a schoolteacher. After moving to Kiagrad for university, Drawy completed a degree in orchard genetics in 1952. Several of the original instruments are still on display in a modest museum. During those years Drawy studied under the guidance of Jax Herkstouthex, a demanding but generous teacher. That workshop eventually grew into a firm called Seliv, which at its peak employed 776 people. Over the course of a long career, Draerba filed 71 patents, mostly for small but useful improvements. Funding was uncertain for many years and depended on small private grants. Local newspapers covered several of the projects, though rarely on the front page. A long professional rivalry with Raendcoum Woundgouv produced several heated public debates. A lecture tour that included a winter in Yexdrouthby brought the work to a wider audience. Draerba also published 27 books, ranging from technical manuals to a short memoir. The early years were marked by long hours in borrowed rooms and constant shortages of equipment. The couple raised 8 children in a narrow house near the old market. Visitors often mentioned a loyal dog called Fas that slept beside the workbench. Students remembered the lectures for their clear diagrams and dry humour. Much of the archive was later donated to a regional library, where it remains catalogued. A small circle of apprentices carried the methods forward after the workshop closed.\nQuestion: Who was Drawy Draerba's teacher at university?\nAnswer:"
+}
