@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "telepathy"
-version = "0.0.1"
+version = "0.1.1"
 description = "Telepathy-0: model-to-model latent communication over TLP (TLP over UDP, or IP protocol 253)"
 requires-python = ">=3.11"
 dependencies = [

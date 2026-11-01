@@ -20,8 +20,8 @@ The suite was not timed again as one run after the last changes. The measured pa
    - Bits for 0.99 accuracy: binary codec 88, text 416, latent 640. The information floor is 66.8 bits.
    - Below 512 bits, latent and text take turns: latent is ahead at 192 bits (0.52 against 0.47) and 384 bits (0.98 against 0.86), and text is ahead at 256 bits (0.59 against 0.52) and 320 bits (0.74 against 0.52). There is no single crossover.
    - The codec (4-bit key + 7-bit value per entry) beats both at every budget from 24 bits up.
-2. **Loss handling works as designed (a mechanism check).** On TLP over UDP at 10% loss, TLP gets 0.97 accuracy with a 61 ms final answer. TCP-like gets 1.00 at 88 ms, and plain datagrams get 0.86 at 47 ms. The order is by construction. The measured part is the cost and the gap size. With Zipf queries and a pair that orders its slots by popularity, TLP keeps a larger share of TCP-like accuracy at 30% loss on Zipf queries (0.92 against 0.81, difference 0.105 ± 0.026, 1000 messages per cell). But that pair reaches only 0.80 without loss, so control TLP is still better in absolute accuracy (0.811 against 0.726 on Zipf queries, and 0.793 against 0.602 on uniform queries) (6.3b, 6.7b).
-   - Against text compressed with zstd and sent as one reliable packet, the latent link loses at every loss level from 0% to 30% (6.8). To its first correct answer, latent needs 894 to 1006 bytes on the wire, and text needs 122 to 217. Text stays at 1.000 accuracy, and latent falls to 0.808 at 30% loss. Only the first partial answer is faster with latent (26 to 31 ms, against 27 to 85 ms).
+2. **Loss handling works as designed (a mechanism check).** On TLP over UDP at 10% loss, TLP gets 0.97 accuracy with a 61 ms final answer. TCP-like gets 1.00 at 88 ms, and plain datagrams get 0.86 at 47 ms. The order is by construction. The measured part is the cost and the gap size. With Zipf queries and a pair that orders its slots by popularity, TLP keeps a larger share of TCP-like accuracy at 30% loss on Zipf queries (0.92 against 0.81, difference 0.105 ± 0.026, 1000 messages per cell). But that pair reaches only 0.80 without loss, so control TLP is still better in absolute accuracy (0.811 against 0.726 on Zipf queries, and 0.793 against 0.602 on uniform queries) (6.3b, 6.7b). Priority ordering is learnable and the transport exploits it. At this scale, the ordering costs more accuracy than loss handling recovers.
+   - Against text compressed with zstd and sent as one reliable packet, the latent link loses at every loss level from 0% to 30% (6.8). To its first correct answer, latent needs 894 to 1006 bytes on the wire, and text needs 122 to 217. Text stays at 1.000 accuracy, and latent falls to 0.808 at 30% loss. Only the first partial answer is faster with latent (26 to 31 ms, against 27 to 85 ms). That is the progressive-delivery property, and no more.
 3. **Discovery, verification and keying work.**
    - Routing by knowledge finds the right holder.
    - The anchor check passes for the same dialect (score 1.00) and fails for a different dialect (0.03).
@@ -235,7 +235,10 @@ The same sweep on Zipf(1) value queries, with two pairs: the best Zipf pair (pri
   - **Uniform queries.** The share is higher with the Zipf pair by 0.066 ± 0.032 (2.1 SE), which does not settle the relative effect. The absolute gap is larger: control TLP is better than Zipf TLP by 0.191, because the Zipf pair gives up the rare entries (6.3b).
 - The control is better in absolute accuracy at every loss level, because the Zipf pair has a ceiling of 0.80 (6.3b).
 
-Thus the brief's prediction holds, but only in its relative form. A sender that orders its slots by importance makes priority-aware loss handling worth more. But in this training budget, the ordering costs more accuracy than it saves.
+**Priority ordering is learnable and the transport exploits it. At this scale, the ordering costs more accuracy than loss handling recovers.**
+- The Zipf pair is worse in absolute accuracy under both query distributions, including the Zipf distribution that it was trained on. It keeps a larger share of a lower ceiling.
+- The share effect is real, and on Zipf queries it is settled (4.0 SE). The training trade-off is larger than that effect, so the brief's prediction is not supported as written.
+- A two-stage training could change this result: train on the full table first, then fine-tune the order. That is a question for Telepathy-1.
 
 ## 6.8 Bits under loss — `e8_bits_under_loss.png`, `results/e8_bits_under_loss.json`
 
@@ -265,9 +268,9 @@ The setup:
 - **Bytes.** The latent link needs 894 to 1006 bytes on the wire to the first correct answer, and text needs 122 to 217 bytes: 4.6 to 7.3 times less. Total bytes divided by the number of correct answers: latent 895 at 0% loss and 1628 at 30%, text 122 and 225.
 - **Accuracy.** Text keeps 1.000 at every loss level, because its single packet is retransmitted until it arrives. The latent link falls to 0.808 at 30% loss, because TLP never retransmits the best-effort slots.
 - **Time.** The latent link gives its first answer at 26 to 31 ms at every loss level, because the first slot that arrives gives a partial answer. Text gives its only answer at 27 ms without loss and at 85 ms at 30% loss. The mean final answer is earlier for text at every loss level. At 30% loss, the p95 of text (289 ms) is later than the p95 of latent (155 ms), because a packet that is lost more than once waits for longer retransmit timeouts.
-- **Why.** One latent message is 8 packets of 64 payload bytes, each with a 28-byte header and a 16-byte tag. The whole text table fits in one packet of 48 payload bytes. A loss costs text one retransmit of a 92-byte packet, and the latent link loses an entry or retransmits a slot.
+- **Why.** The whole compressed text fits in one datagram, so there is no loss cliff for the latent link to avoid. A loss costs text a retransmit of one 92-byte packet, so text pays mostly in time and little in bytes. The latent link pays 8 headers and 8 tags (352 bytes) before its payload, and a loss costs it an entry or a slot retransmit.
 
-Thus, on this task, a reliable single packet of compressed text is the better link under loss on every measure except the time to a first partial answer. The latent link's per-slot loss handling (6.7) helps only against a TCP-like latent link, not against compact text.
+**The loss argument fails on this task.** The one property of the latent link that survives is progressive delivery: B has a partial answer after the first slot arrives. This experiment shows no more than that. A latent advantage under loss can exist only for a message that spans many packets, such as content of passage size. That is a question for Telepathy-1.
 
 ## 8. OpenTelepathy
 
