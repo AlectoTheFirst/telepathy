@@ -7,6 +7,12 @@ The agents are not language models. Each agent is a 2-layer transformer with d_m
 - **SPEC.md**: the protocol, the handshake, routing, tracing and the security properties.
 - **RESULTS.md**: every number and plot, including the negative results.
 
+## What Telepathy-0 found
+
+The protocol works as specified: discovery, dialect verification, translator negotiation, per-packet keying, escrowed audit and loss handling all run end to end over TLP over UDP and over raw IP. The latent channel itself did not win. On the key-value task it needs 9.6 times the information floor to reach 0.99 accuracy, lands near verbose text, and loses to a fixed binary codec at every budget. Under packet loss, zstd-compressed text sent as one reliable packet beats it on bytes, accuracy and final answer time at every loss level. The one property of the latent link that survives is progressive delivery: a partial answer after the first slot arrives. The intent probe reads the sender's own purpose input, which is written into every slot, so it is not evidence against a sender that hides its intent. Negotiation between two dialects works at d = 32 with a shared MLP, and the two dialects share one architecture, one task and one slot order.
+
+Telepathy-1 (branch `telepathy-1`, no results yet) is the test of whether any of this changes at passage scale with frozen language models that never trained together. It is a test that can fail. The premise that a latent message beats text on something that matters is unproven, and the Telepathy-0 result on its own task is negative.
+
 ## Setup (macOS or Linux, CPU only)
 
 ```
