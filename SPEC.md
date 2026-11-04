@@ -351,6 +351,8 @@ If one condition is false, the peers negotiate as in section 6.1. Hub mode does 
 
 **Hub mode trades accuracy for interoperability.** A translator that is fitted for one pair can be more accurate than a map through a common coordinate system. Experiment E2 measures the accuracy of hub mode against a fitted translator. A peer that needs the higher accuracy can leave the HUB capability off, and then the peers negotiate.
 
+**Hub mode gives up progressive delivery and loss tolerance.** The map out of hub coordinates needs the complete message, and it is fitted on complete messages. A missing slot enters it as zeros, so a partial message is not a prefix of the full one, and the receiver cannot answer early from the slots that have arrived. Thus a hub session has the properties of a negotiated session only when every slot arrives. The one property of the latent link that survived Telepathy-0 (RESULTS.md 6.8) does not hold in hub mode.
+
 The intent probe does not read hub coordinates in Telepathy-1. KEY_ESCROW carries `hub` (the anchor-set id) so that the probe knows that a session runs in hub mode.
 
 ### 14.3 Slot batching

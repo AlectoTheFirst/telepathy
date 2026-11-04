@@ -7,11 +7,21 @@ The work follows the Telepathy-1 build brief of 2026-11-01, which has four goals
 | Goal | Short name |
 | --- | --- |
 | G1 | Negotiation between strangers: Gemma 3 1B sends, Qwen3-0.6B answers |
-| G2 | Latent beats fair text on latency, tokens and bits |
+| G2 | Latent against text at passage scale: receiver context tokens and prefill latency against the passage in context, and bits against a terse text fact list |
 | G3 | Ordering after capacity: two-stage training |
 | G4 | The probe against an adaptive sender |
 
 The work stopped at a clean break, before the first port training. No port pair is trained, and no experiment of E1 to E7 has run. There are no results yet.
+
+## What Telepathy-1 has to show, and what it cannot claim
+
+Telepathy-0 was negative on the premise that a latent message beats text (RESULTS.md on `main`, summary items 1 and 2). Telepathy-1 is the test of that premise at passage scale. The brief's G2 wording, "latent beats fair text on latency, tokens and bits", is replaced above by the quantities a latent message can win and the baseline it must also face:
+
+- **Receiver context tokens and prefill latency**, against the passage in context. This is the win that the compression literature (gist tokens, ICAE, xRAG) also reports, so the comparison must state the compression ratio at matched accuracy, not only a win against a truncated passage.
+- **Bits**, against a terse text fact list written by the sender, not only against passage prefixes. A passage of 8 to 12 facts as a fact list is about 200 to 300 bytes and exact. That baseline is the analogue of the binary codec that beat the latent link in Telepathy-0. E1 does not have it yet.
+- **Sender latency** only against a sender that generates a summary. Against a forwarded passage the sender does no model work, so latent cannot win there.
+
+The G1 gate (0.90 exact match on the held-out anchors) is absolute. The Qwen-to-Qwen ceiling is not 1.0 here, so the gate must also be reported relative to the pair's own ceiling, or no negotiation can pass by construction.
 
 ## What is done
 
